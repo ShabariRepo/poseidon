@@ -579,18 +579,16 @@ function ukiyoScene() {
   const wave = () => `wave${1 + Math.floor(Math.random() * 5)}.png`;
 
   let waves = "";
-  // back row: smaller, hazier
-  [
-    [5, 120], [22, 145], [40, 112], [58, 138], [76, 118], [91, 132],
-  ].forEach(([left, w]) => {
-    waves += `<div class="uk-wave back" style="left:${left}%;width:${w}px;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
-  });
-  // front row: bigger
-  [
-    [-2, 205], [17, 172], [36, 225], [57, 182], [75, 215], [90, 178],
-  ].forEach(([left, w]) => {
-    waves += `<div class="uk-wave front" style="left:${left}%;width:${w}px;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
-  });
+  // back row: smaller, hazier, dense
+  for (let left = -3; left <= 97; left += 8) {
+    const w = (8 + Math.random() * 3).toFixed(1);
+    waves += `<div class="uk-wave back" style="left:${(left + Math.random() * 2 - 1).toFixed(1)}%;width:${w}vw;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
+  }
+  // front row: bigger, overlapping — the sea covers the floor
+  for (let left = -5; left <= 95; left += 9) {
+    const w = (13 + Math.random() * 4).toFixed(1);
+    waves += `<div class="uk-wave front" style="left:${(left + Math.random() * 2 - 1).toFixed(1)}%;width:${w}vw;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
+  }
 
   let clouds = "";
   const pool = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
