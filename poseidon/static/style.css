@@ -308,8 +308,9 @@ dialog a { color: var(--accent); }
 .uk-fuji { position: absolute; right: 8%; bottom: 5vh; width: 260px; height: 200px; opacity: .9; }
 .uk-sea { position: absolute; left: 0; right: 0; bottom: 0; height: 7vh; background: #1d3a63; }
 .uk-wave { position: absolute; animation: uksway 7s ease-in-out infinite alternate; }
-.uk-wave.back { bottom: 8vh; opacity: .92; }
+.uk-wave.back { bottom: 8vh; opacity: .85; filter: brightness(1.08) saturate(.75); }
 .uk-wave.front { bottom: 1vh; }
+.uk-wave img, .uk-cloud img { width: 100%; height: auto; display: block; }
 @keyframes uksway {
   from { transform: translate(-7px, 2px) rotate(-1deg); }
   to { transform: translate(7px, -4px) rotate(1.2deg); }
