@@ -36,6 +36,11 @@ And it's properly agentic, not just a chat with tools:
 - **Memory** — durable facts persist across sessions as plain markdown in
   `~/.poseidon/memory/`. Your agent's memory is your files: open it, edit it, delete it.
 
+And because you stare at it all day: **skins**. Daylight waves (default),
+Trek Wars (starfield + hyperjumps), Ukiyo-e (living woodblock waves), and
+Wasteland (dunes, dust, the occasional tumbleweed). All hand-drawn vector — sharp
+at any size.
+
 ## Works with any model
 
 Any OpenAI-compatible endpoint:

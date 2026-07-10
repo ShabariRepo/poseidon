@@ -405,4 +405,152 @@ $("about-link").onclick = (e) => {
 };
 $("about-close").onclick = () => $("about-modal").close();
 
+/* ================= skins ================= */
+const SKIN_KEY = "poseidon-skin";
+let skinTimers = [];
+
+function clearSkinFx() {
+  skinTimers.forEach(clearTimeout);
+  skinTimers = [];
+}
+
+/* ---- scene builders ---- */
+function baseScene() {
+  return `<div class="waves">
+    <svg class="wave wave-back" viewBox="0 0 1440 320" preserveAspectRatio="none">
+      <path d="M0,192 C180,140 320,240 520,210 C720,180 860,90 1080,120 C1260,145 1360,200 1440,180 L1440,320 L0,320 Z"/>
+    </svg>
+    <svg class="wave wave-front" viewBox="0 0 1440 320" preserveAspectRatio="none">
+      <path d="M0,240 C220,190 380,280 600,250 C820,220 960,150 1160,180 C1310,202 1390,240 1440,230 L1440,320 L0,320 Z"/>
+    </svg></div>`;
+}
+
+function starsSVG(n, rmax, cls) {
+  let c = "";
+  for (let i = 0; i < n; i++) {
+    const tw = Math.random() < 0.18
+      ? ` class="tw" style="animation-delay:${(Math.random() * 4).toFixed(1)}s"`
+      : "";
+    c += `<circle cx="${(Math.random() * 1600).toFixed(0)}" cy="${(Math.random() * 900).toFixed(0)}" r="${(rmax * (0.4 + Math.random() * 0.6)).toFixed(2)}" opacity="${(0.35 + Math.random() * 0.65).toFixed(2)}"${tw}/>`;
+  }
+  return `<svg class="star-layer ${cls}" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="#fff">${c}</svg>`;
+}
+
+function jumpSVG() {
+  let c = "";
+  for (let i = 0; i < 70; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r1 = 60 + Math.random() * 220;
+    const r2 = r1 + 160 + Math.random() * 420;
+    c += `<line x1="${(800 + r1 * Math.cos(a)).toFixed(0)}" y1="${(450 + r1 * Math.sin(a)).toFixed(0)}" x2="${(800 + r2 * Math.cos(a)).toFixed(0)}" y2="${(450 + r2 * Math.sin(a)).toFixed(0)}" opacity="${(0.3 + Math.random() * 0.6).toFixed(2)}" stroke-width="${(1 + Math.random() * 1.6).toFixed(1)}"/>`;
+  }
+  return `<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" stroke="#dfeeff" width="100%" height="100%">${c}</svg>`;
+}
+
+function trekScene() {
+  return `<div class="nebula n1"></div><div class="nebula n2"></div>
+    ${starsSVG(150, 0.8, "l1")}${starsSVG(90, 1.2, "l2")}${starsSVG(40, 1.8, "l3")}
+    <div class="shooting-star"></div><div class="shooting-star s2"></div>
+    <div class="hyperjump">${jumpSVG()}</div>`;
+}
+
+const UK_CREAM = "#f5ecd7";
+function svgUrl(svg) {
+  return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
+}
+
+function ukWaveTile(fill) {
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="240" viewBox="0 0 600 240"><path d="M0,150 Q50,92 112,96 Q164,99 188,136 Q202,158 192,184 Q244,122 322,107 Q392,94 432,132 Q456,156 446,186 Q498,128 562,120 Q586,117 600,126 L600,240 L0,240 Z" fill="${fill}"/><g fill="none" stroke="${UK_CREAM}" stroke-linecap="round"><path d="M0,150 Q50,92 112,96 Q164,99 188,136" stroke-width="5"/><path d="M192,184 Q244,122 322,107 Q392,94 432,132" stroke-width="5"/><path d="M446,186 Q498,128 562,120 Q586,117 600,126" stroke-width="5"/><path d="M188,136 q20,-30 46,-20 q24,9 20,32 q-3,18 -21,17 q-14,-1 -13,-15 q1,-11 12,-10" stroke-width="6"/><path d="M432,132 q20,-30 46,-20 q24,9 20,32 q-3,18 -21,17 q-14,-1 -13,-15 q1,-11 12,-10" stroke-width="6"/><path d="M0,150 Q50,92 112,96 Q164,99 188,136 M192,184 Q244,122 322,107 Q392,94 432,132 M446,186 Q498,128 562,120 Q586,117 600,126" stroke-width="11" stroke-dasharray="0,26"/></g></svg>`);
+}
+
+function ukCloudTile() {
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="120" viewBox="0 0 800 120"><g fill="#f8f1de" stroke="#4a5a7d" stroke-width="1.5" opacity="0.9"><rect x="40" y="56" width="200" height="17" rx="8.5"/><rect x="82" y="36" width="128" height="17" rx="8.5"/><rect x="62" y="76" width="148" height="17" rx="8.5"/><rect x="470" y="46" width="228" height="17" rx="8.5"/><rect x="522" y="26" width="138" height="17" rx="8.5"/><rect x="500" y="66" width="168" height="17" rx="8.5"/></g></svg>`);
+}
+
+function ukiyoScene() {
+  return `<div class="uk-sun"></div><div class="uk-clouds"></div>
+    <div class="uk-band uk-back"></div><div class="uk-band uk-mid"></div><div class="uk-band uk-front"></div>`;
+}
+
+function duneTile(fill, derrick) {
+  const rig = derrick
+    ? `<g fill="${fill}"><path d="M604,150 l15,-58 h8 l15,58 z"/><rect x="596" y="94" width="54" height="6"/><path d="M611,100 l24,44 M635,100 l-24,44" stroke="${fill}" stroke-width="3"/></g>`
+    : "";
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="260" viewBox="0 0 800 260"><path d="M0,150 Q160,70 340,130 Q520,190 800,110 L800,260 L0,260 Z" fill="${fill}"/>${rig}</svg>`);
+}
+
+function dustTile(n, color, w, h) {
+  let c = "";
+  for (let i = 0; i < n; i++) {
+    c += `<circle cx="${(Math.random() * w).toFixed(0)}" cy="${(Math.random() * h).toFixed(0)}" r="${(0.8 + Math.random() * 1.6).toFixed(1)}" opacity="${(0.2 + Math.random() * 0.5).toFixed(2)}"/>`;
+  }
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="${color}">${c}</svg>`);
+}
+
+function wastelandScene() {
+  return `<div class="ws-sun"></div>
+    <div class="ws-dust"></div><div class="ws-dust d2"></div>
+    <div class="ws-band ws-back"></div><div class="ws-band ws-mid"></div><div class="ws-band ws-front"></div>`;
+}
+
+const SCENES = { base: baseScene, trek: trekScene, ukiyo: ukiyoScene, wasteland: wastelandScene };
+
+const SCENE_SETUP = {
+  ukiyo(scene) {
+    scene.querySelector(".uk-clouds").style.backgroundImage = ukCloudTile();
+    scene.querySelector(".uk-back").style.backgroundImage = ukWaveTile("#7a9cc4");
+    scene.querySelector(".uk-mid").style.backgroundImage = ukWaveTile("#3e6494");
+    scene.querySelector(".uk-front").style.backgroundImage = ukWaveTile("#22406e");
+  },
+  wasteland(scene) {
+    scene.querySelector(".ws-dust").style.backgroundImage = dustTile(34, "#9a6f3c", 480, 360);
+    scene.querySelector(".ws-dust.d2").style.backgroundImage = dustTile(24, "#b58a52", 340, 260);
+    scene.querySelector(".ws-back").style.backgroundImage = duneTile("#c99a5d", false);
+    scene.querySelector(".ws-mid").style.backgroundImage = duneTile("#a06b31", false);
+    scene.querySelector(".ws-front").style.backgroundImage = duneTile("#6e4218", true);
+  },
+};
+
+/* ---- occasional effects ---- */
+function scheduleHyperjump(delay) {
+  skinTimers.push(setTimeout(() => {
+    const scene = $("scene");
+    scene.classList.add("jumping");
+    skinTimers.push(setTimeout(() => scene.classList.remove("jumping"), 1600));
+    scheduleHyperjump(35000 + Math.random() * 40000);
+  }, delay));
+}
+
+function spawnTumbleweed() {
+  const el = document.createElement("div");
+  el.className = "tumbleweed";
+  el.innerHTML = `<svg viewBox="0 0 64 64" fill="none" stroke="#6b4a26" stroke-width="2"><ellipse cx="32" cy="32" rx="27" ry="25"/><ellipse cx="32" cy="32" rx="19" ry="22" transform="rotate(40 32 32)"/><ellipse cx="32" cy="32" rx="12" ry="16" transform="rotate(-30 32 32)"/><path d="M10,40 Q32,20 54,38 M14,22 Q34,40 52,24 M28,6 Q30,32 36,58"/></svg>`;
+  $("scene").appendChild(el);
+  skinTimers.push(setTimeout(() => el.remove(), 9500));
+}
+
+function scheduleTumbleweed(delay) {
+  skinTimers.push(setTimeout(() => {
+    spawnTumbleweed();
+    scheduleTumbleweed(40000 + Math.random() * 50000);
+  }, delay));
+}
+
+function applySkin(name) {
+  if (!SCENES[name]) name = "base";
+  clearSkinFx();
+  document.documentElement.dataset.skin = name;
+  const scene = $("scene");
+  scene.classList.remove("jumping");
+  scene.innerHTML = SCENES[name]();
+  SCENE_SETUP[name]?.(scene);
+  if (name === "trek") scheduleHyperjump(9000);
+  if (name === "wasteland") scheduleTumbleweed(7000);
+  localStorage.setItem(SKIN_KEY, name);
+  $("skin-select").value = name;
+}
+
+$("skin-select").onchange = (e) => applySkin(e.target.value);
+
+applySkin(localStorage.getItem(SKIN_KEY) || "base");
 init();

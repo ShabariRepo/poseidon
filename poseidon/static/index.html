@@ -5,20 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Poseidon</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔱</text></svg>" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=040" />
 </head>
 <body>
-  <div class="waves" aria-hidden="true">
-    <svg class="wave wave-back" viewBox="0 0 1440 320" preserveAspectRatio="none">
-      <path d="M0,192 C180,140 320,240 520,210 C720,180 860,90 1080,120 C1260,145 1360,200 1440,180 L1440,320 L0,320 Z"/>
-    </svg>
-    <svg class="wave wave-front" viewBox="0 0 1440 320" preserveAspectRatio="none">
-      <path d="M0,240 C220,190 380,280 600,250 C820,220 960,150 1160,180 C1310,202 1390,240 1440,230 L1440,320 L0,320 Z"/>
-    </svg>
-  </div>
+  <div id="scene" aria-hidden="true"></div>
   <header>
     <div class="brand">🔱 <strong>Poseidon</strong><span id="workdir" class="workdir"></span></div>
     <div class="header-right">
+      <select id="skin-select" class="skin-select" title="Skin">
+        <option value="base">🌊 Poseidon</option>
+        <option value="trek">🚀 Trek Wars</option>
+        <option value="ukiyo">🌸 Ukiyo-e</option>
+        <option value="wasteland">🏜 Wasteland</option>
+      </select>
       <span id="cost" class="cost" title="Session cost (tokens in/out)">$0.0000</span>
       <button id="settings-btn" class="ghost" title="Settings">⚙</button>
     </div>
@@ -97,6 +96,6 @@
     </div>
   </dialog>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=040"></script>
 </body>
 </html>

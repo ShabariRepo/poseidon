@@ -1,3 +1,4 @@
+/* ================= palette (base skin: Poseidon daylight) ================= */
 :root {
   --bg: #f2f7fb;
   --bg-raised: rgba(255, 255, 255, .82);
@@ -6,48 +7,112 @@
   --border: #d8e4ee;
   --text: #21384d;
   --muted: #64798e;
-  --accent: #0f7fa8;        /* ocean blue */
+  --accent: #0f7fa8;
   --accent-deep: #0b5f7e;
   --accent-soft: #e0f1f8;
   --user: #d9ecf9;
   --danger: #c2493d;
   --warn: #b07818;
   --warn-soft: #fdf4e2;
+  --feed-line: #e9f1f7;
+  --approval-border: #e5c98a;
+  --error-bg: #fbeae8;
+  --error-text: #8c3129;
+  --done: #3f9c6b;
+  --shadow: rgba(20, 45, 68, .18);
   font-size: 15px;
 }
+
+/* ---- Trek Wars: deep space ---- */
+:root[data-skin="trek"] {
+  --bg: #060913;
+  --bg-raised: rgba(13, 19, 34, .82);
+  --bg-solid: #0e1526;
+  --bg-input: #131c30;
+  --border: #263550;
+  --text: #d7e3f8;
+  --muted: #7e8fae;
+  --accent: #56b6f0;
+  --accent-deep: #3f9bd8;
+  --accent-soft: #12314d;
+  --user: #163356;
+  --danger: #ff7a6b;
+  --warn: #f0b45c;
+  --warn-soft: #2a2216;
+  --feed-line: #16233c;
+  --approval-border: #6b5a2c;
+  --error-bg: #3a1a17;
+  --error-text: #ffb4aa;
+  --done: #5ad39a;
+  --shadow: rgba(0, 0, 0, .6);
+}
+:root[data-skin="trek"] button { color: #04121f; }
+:root[data-skin="trek"] button.ghost, :root[data-skin="trek"] button.deny { color: var(--muted); }
+:root[data-skin="trek"] button.deny { color: var(--danger); }
+
+/* ---- Ukiyo-e: indigo & aged paper ---- */
+:root[data-skin="ukiyo"] {
+  --bg: #ece0c4;
+  --bg-raised: rgba(250, 244, 229, .86);
+  --bg-solid: #faf4e5;
+  --bg-input: #f2e9d2;
+  --border: #d5c49c;
+  --text: #2c3a5c;
+  --muted: #827152;
+  --accent: #b64330;
+  --accent-deep: #93321f;
+  --accent-soft: #f0dcc7;
+  --user: #dce6f0;
+  --danger: #a13328;
+  --warn: #8c6d1f;
+  --warn-soft: #f6ecd0;
+  --feed-line: #e4d7b8;
+  --approval-border: #cfa94e;
+  --error-bg: #f6ded7;
+  --error-text: #7c2d22;
+  --done: #4c7a48;
+  --shadow: rgba(70, 50, 20, .25);
+}
+:root[data-skin="ukiyo"] .brand strong { font-family: Georgia, "Times New Roman", serif; letter-spacing: .5px; }
+
+/* ---- Wasteland: harsh sun & rust ---- */
+:root[data-skin="wasteland"] {
+  --bg: #ecd19b;
+  --bg-raised: rgba(252, 240, 217, .8);
+  --bg-solid: #fbf0d9;
+  --bg-input: #f2e2bd;
+  --border: #d3b076;
+  --text: #3a2410;
+  --muted: #8a6a42;
+  --accent: #b3541e;
+  --accent-deep: #8e3f12;
+  --accent-soft: #f4dcbc;
+  --user: #f1ddb4;
+  --danger: #a52a12;
+  --warn: #8a5a10;
+  --warn-soft: #f6e6c2;
+  --feed-line: #e4cf9f;
+  --approval-border: #c99b4a;
+  --error-bg: #f5d9c9;
+  --error-text: #7e2a10;
+  --done: #5c7a34;
+  --shadow: rgba(90, 55, 15, .3);
+}
+:root[data-skin="wasteland"] body {
+  background: linear-gradient(180deg, #efbe7a 0%, #eed3a0 45%, #ecd19b 100%);
+}
+
+/* ================= layout ================= */
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column;
   background: var(--bg); color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition: background .4s, color .4s;
 }
 
-/* ---- the water: slow wave drifting left↔right along the bottom ---- */
-.waves {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 30vh;
-  z-index: 0; pointer-events: none; overflow: hidden;
-}
-.wave {
-  position: absolute; bottom: 0; left: -30%; width: 160%; height: 100%;
-  will-change: transform;
-}
-.wave-back {
-  fill: rgba(15, 127, 168, .07);
-  animation: drift 52s ease-in-out infinite alternate;
-}
-.wave-front {
-  fill: rgba(15, 127, 168, .12);
-  animation: drift 34s ease-in-out infinite alternate-reverse;
-}
-@keyframes drift {
-  from { transform: translateX(-7%) }
-  to   { transform: translateX(7%) }
-}
-@media (prefers-reduced-motion: reduce) {
-  .wave-back, .wave-front { animation: none; }
-}
-
+#scene { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 header, main, footer { position: relative; z-index: 1; }
 
 header {
@@ -58,29 +123,31 @@ header {
 .brand { display: flex; align-items: baseline; gap: 8px; font-size: 1.05rem; }
 .workdir { color: var(--muted); font-size: .8rem; font-family: ui-monospace, monospace; }
 .header-right { display: flex; align-items: center; gap: 12px; }
+.skin-select {
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 8px; font-size: .8rem; font-family: inherit;
+}
 .cost {
   font-family: ui-monospace, monospace; font-size: .85rem;
   color: var(--accent-deep); background: var(--accent-soft);
   padding: 3px 10px; border-radius: 12px;
 }
+:root[data-skin="trek"] .cost { color: var(--accent); }
 .cost.unpriced::after { content: " ~"; color: var(--warn); }
 
 main { flex: 1; display: flex; min-height: 0; }
 
 /* ---- chat (left) ---- */
-#chat-pane {
-  flex: 1.1; display: flex; flex-direction: column;
-  border-right: 1px solid var(--border); min-width: 0;
-}
+#chat-pane { flex: 1.1; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 0; }
 #messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
 .msg.user { align-self: flex-end; background: var(--user); border-bottom-right-radius: 4px; }
 .msg.assistant {
   align-self: flex-start; background: var(--bg-raised); backdrop-filter: blur(4px);
   border: 1px solid var(--border); border-bottom-left-radius: 4px;
-  box-shadow: 0 1px 2px rgba(33, 56, 77, .04);
+  box-shadow: 0 1px 2px var(--shadow);
 }
-.msg.error { align-self: stretch; background: #fbeae8; border: 1px solid var(--danger); color: #8c3129; font-size: .9rem; }
+.msg.error { align-self: stretch; background: var(--error-bg); border: 1px solid var(--danger); color: var(--error-text); font-size: .9rem; }
 .tool-chip {
   align-self: flex-start; font-family: ui-monospace, monospace; font-size: .78rem;
   color: var(--muted); padding: 2px 10px; border-left: 2px solid var(--accent);
@@ -89,11 +156,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .thinking::after { content: "…"; animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
 
-/* approval card */
-.approval {
-  align-self: stretch; background: var(--warn-soft);
-  border: 1px solid #e5c98a; border-radius: 12px; padding: 12px 14px;
-}
+.approval { align-self: stretch; background: var(--warn-soft); border: 1px solid var(--approval-border); border-radius: 12px; padding: 12px 14px; }
 .approval h4 { margin: 0 0 6px; font-size: .9rem; color: var(--warn); }
 .approval pre {
   margin: 6px 0 10px; padding: 8px 10px; background: var(--bg-solid);
@@ -104,11 +167,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .approval.resolved { opacity: .6; border-color: var(--border); background: var(--bg-raised); }
 .approval .verdict { font-size: .8rem; color: var(--muted); }
 
-#chat-form {
-  display: flex; gap: 8px; padding: 12px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-raised); backdrop-filter: blur(6px);
-}
+#chat-form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg-raised); backdrop-filter: blur(6px); }
 #chat-input {
   flex: 1; resize: none; background: var(--bg-solid); color: var(--text);
   border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
@@ -116,41 +175,32 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 #chat-input:focus { outline: none; border-color: var(--accent); }
 
-button {
-  background: var(--accent); color: #fff; border: none; border-radius: 10px;
-  padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer;
-}
+button { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; }
 button:hover { background: var(--accent-deep); }
 button:disabled { opacity: .45; cursor: default; }
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 button.ghost:hover { color: var(--text); background: var(--bg-input); }
 button.deny { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
-button.deny:hover { background: #fbeae8; }
+button.deny:hover { background: var(--error-bg); }
 
 /* ---- workspace (right) ---- */
 #workspace-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.tabs {
-  display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border);
-  background: var(--bg-raised); backdrop-filter: blur(6px);
-}
-.tab {
-  background: transparent; color: var(--muted); border: none; border-radius: 8px 8px 0 0;
-  padding: 8px 16px; font-weight: 500;
-}
+.tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); background: var(--bg-raised); backdrop-filter: blur(6px); }
+.tab { background: transparent; color: var(--muted); border: none; border-radius: 8px 8px 0 0; padding: 8px 16px; font-weight: 500; }
 .tab:hover { background: var(--bg-input); color: var(--text); }
 .tab.active { color: var(--accent-deep); background: var(--accent-soft); }
+:root[data-skin="trek"] .tab.active { color: var(--accent); }
 .tab-body { flex: 1; overflow-y: auto; display: none; min-height: 0; }
 .tab-body.active { display: block; }
 
 .feed { padding: 14px; font-family: ui-monospace, monospace; font-size: .8rem; }
 .feed-empty { color: var(--muted); font-family: inherit; padding: 14px; }
-.feed-item { padding: 4px 0; border-bottom: 1px solid #e9f1f7; display: flex; gap: 8px; }
+.feed-item { padding: 4px 0; border-bottom: 1px solid var(--feed-line); display: flex; gap: 8px; }
 .feed-item .t { color: var(--muted); flex-shrink: 0; }
-.feed-item .ok { color: var(--accent-deep); }
+.feed-item .ok { color: var(--done); }
 .feed-item .err { color: var(--danger); }
-.feed-item .sub { color: #7c5cad; }
+.feed-item .sub { color: #8a6fc4; }
 
-/* tasks */
 .task-list { padding: 14px; }
 .task-row { display: flex; gap: 10px; padding: 7px 8px; border-radius: 8px; align-items: baseline; }
 .task-row .dot { font-size: .9rem; flex-shrink: 0; }
@@ -159,15 +209,12 @@ button.deny:hover { background: #fbeae8; }
 .task-row.in_progress .dot { color: var(--accent-deep); }
 .task-row.done { color: var(--muted); }
 .task-row.done .title { text-decoration: line-through; }
-.task-row.done .dot { color: #3f9c6b; }
+.task-row.done .dot { color: var(--done); }
 
-/* schedules */
 .schedule-list { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.schedule-card {
-  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px 12px; font-size: .85rem;
-}
+.schedule-card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: .85rem; }
 .schedule-card .when { color: var(--accent-deep); font-weight: 600; }
+:root[data-skin="trek"] .schedule-card .when { color: var(--accent); }
 .schedule-card .meta { color: var(--muted); font-size: .78rem; margin-top: 4px; }
 .schedule-card .last { margin-top: 6px; font-size: .78rem; color: var(--muted); white-space: pre-wrap; }
 .schedule-card .cancel { float: right; font-size: .75rem; padding: 3px 10px; }
@@ -175,10 +222,7 @@ button.deny:hover { background: #fbeae8; }
 .breadcrumb { padding: 10px 14px 0; font-family: ui-monospace, monospace; font-size: .8rem; color: var(--muted); }
 .breadcrumb a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .file-list { padding: 8px 14px; }
-.file-row {
-  display: flex; justify-content: space-between; padding: 5px 8px;
-  border-radius: 6px; cursor: pointer; font-size: .85rem;
-}
+.file-row { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: .85rem; }
 .file-row:hover { background: var(--bg-raised); }
 .file-row .size { color: var(--muted); font-size: .75rem; }
 .file-view {
@@ -187,22 +231,16 @@ button.deny:hover { background: #fbeae8; }
   font-size: .78rem; overflow: auto; max-height: 70vh; white-space: pre-wrap;
 }
 
-footer {
-  display: flex; justify-content: space-between; padding: 6px 16px;
-  border-top: 1px solid var(--border); font-size: .75rem; color: var(--muted);
-  background: transparent;
-}
+footer { display: flex; justify-content: space-between; padding: 6px 16px; border-top: 1px solid var(--border); font-size: .75rem; color: var(--muted); background: transparent; }
 footer a { color: var(--muted); }
 footer a:hover { color: var(--accent-deep); }
 
-/* ---- modals ---- */
 dialog {
   background: var(--bg-solid); color: var(--text);
   border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px;
-  width: min(440px, 92vw);
-  box-shadow: 0 18px 50px rgba(20, 45, 68, .18);
+  width: min(440px, 92vw); box-shadow: 0 18px 50px var(--shadow);
 }
-dialog::backdrop { background: rgba(33, 56, 77, .35); }
+dialog::backdrop { background: rgba(10, 20, 32, .45); }
 dialog h2 { margin: 0 0 8px; }
 dialog label { display: block; margin: 12px 0 0; font-size: .85rem; color: var(--muted); }
 dialog input, dialog select {
@@ -213,3 +251,83 @@ dialog input, dialog select {
 .modal-actions { display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end; }
 .muted { color: var(--muted); font-size: .85rem; }
 dialog a { color: var(--accent); }
+
+/* ================= scenes ================= */
+
+/* ---- base: daylight waves ---- */
+.waves { position: absolute; left: 0; right: 0; bottom: 0; height: 30vh; overflow: hidden; }
+.wave { position: absolute; bottom: 0; left: -30%; width: 160%; height: 100%; will-change: transform; }
+.wave-back { fill: rgba(15, 127, 168, .07); animation: drift 52s ease-in-out infinite alternate; }
+.wave-front { fill: rgba(15, 127, 168, .12); animation: drift 34s ease-in-out infinite alternate-reverse; }
+@keyframes drift { from { transform: translateX(-7%) } to { transform: translateX(7%) } }
+
+/* ---- trek: starfield, nebulae, hyperjump ---- */
+.star-layer { position: absolute; inset: -6%; width: 112%; height: 112%; }
+.star-layer.l1 { animation: stardrift 140s ease-in-out infinite alternate; }
+.star-layer.l2 { animation: stardrift 200s ease-in-out infinite alternate-reverse; }
+.star-layer.l3 { animation: stardrift 260s ease-in-out infinite alternate; }
+@keyframes stardrift { from { transform: translate(0, 0) } to { transform: translate(-2.2%, -1.4%) } }
+.star-layer .tw { animation: twinkle 3.5s ease-in-out infinite; }
+@keyframes twinkle { 0%, 100% { opacity: .95 } 50% { opacity: .25 } }
+.nebula { position: absolute; border-radius: 50%; filter: none; }
+.nebula.n1 { width: 55vw; height: 55vw; top: -18vw; right: -12vw; background: radial-gradient(circle, rgba(108, 78, 178, .16) 0%, rgba(108, 78, 178, 0) 62%); }
+.nebula.n2 { width: 45vw; height: 45vw; bottom: -14vw; left: -10vw; background: radial-gradient(circle, rgba(35, 140, 160, .13) 0%, rgba(35, 140, 160, 0) 62%); }
+.shooting-star { position: absolute; top: 14%; right: 6%; width: 150px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(255,255,255,.95), rgba(255,255,255,0)); opacity: 0; animation: shoot 26s linear infinite; }
+.shooting-star.s2 { top: 58%; right: 20%; animation-delay: 13s; animation-duration: 31s; }
+@keyframes shoot {
+  0%, 90% { opacity: 0; transform: translate(0, 0) rotate(-32deg); }
+  91.5% { opacity: .95; }
+  94% { opacity: 0; transform: translate(-44vw, 26vh) rotate(-32deg); }
+  100% { opacity: 0; transform: translate(-44vw, 26vh) rotate(-32deg); }
+}
+.hyperjump { position: absolute; inset: 0; opacity: 0; transform: scale(.35); }
+#scene.jumping .hyperjump { animation: jump 1.5s ease-in forwards; }
+#scene.jumping .star-layer { animation-play-state: paused; }
+@keyframes jump {
+  0% { opacity: 0; transform: scale(.3); }
+  22% { opacity: .9; }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+
+/* ---- ukiyo: scrolling woodblock waves, sun, dash clouds ---- */
+.uk-band { position: absolute; left: 0; right: 0; bottom: 0; background-repeat: repeat-x; background-position: 0 bottom; background-size: auto 100%; }
+.uk-back  { height: 30vh; opacity: .55; animation: scroll600 96s linear infinite, bob 11s ease-in-out infinite alternate; }
+.uk-mid   { height: 22vh; opacity: .8;  animation: scroll600r 64s linear infinite, bob 9s ease-in-out infinite alternate-reverse; }
+.uk-front { height: 15vh; animation: scroll600 40s linear infinite, bob 7s ease-in-out infinite alternate; }
+@keyframes scroll600 { from { background-position-x: 0 } to { background-position-x: -600px } }
+@keyframes scroll600r { from { background-position-x: 0 } to { background-position-x: 600px } }
+@keyframes bob { from { transform: translateY(0) } to { transform: translateY(7px) } }
+.uk-sun { position: absolute; top: 9%; right: 16%; width: 130px; height: 130px; border-radius: 50%; background: #c0392b; box-shadow: 0 0 0 6px rgba(192, 57, 46, .12); }
+.uk-clouds { position: absolute; top: 4%; left: 0; right: 0; height: 120px; background-repeat: repeat-x; background-size: auto 100%; opacity: .9; animation: scroll800 220s linear infinite; }
+@keyframes scroll800 { from { background-position-x: 0 } to { background-position-x: -800px } }
+
+/* ---- wasteland: sun haze, dunes, dust, tumbleweed ---- */
+.ws-sun { position: absolute; top: 16%; left: 50%; width: 210px; height: 210px; margin-left: -105px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 244, 214, .95) 0%, rgba(255, 214, 140, .55) 46%, rgba(255, 200, 110, 0) 72%); }
+.ws-band { position: absolute; left: 0; right: 0; bottom: 0; background-repeat: repeat-x; background-position: 0 bottom; background-size: auto 100%; }
+.ws-back  { height: 26vh; opacity: .5; animation: scroll800 260s linear infinite; }
+.ws-mid   { height: 19vh; opacity: .75; animation: scroll800r 170s linear infinite; }
+.ws-front { height: 12vh; animation: scroll800 110s linear infinite, shimmer 6s ease-in-out infinite alternate; transform-origin: bottom; }
+@keyframes scroll800r { from { background-position-x: 0 } to { background-position-x: 800px } }
+@keyframes shimmer { from { transform: scaleY(1) } to { transform: scaleY(1.012) } }
+.ws-dust { position: absolute; inset: 0; background-repeat: repeat; background-size: 480px 360px; animation: dustdrift 34s linear infinite; opacity: .5; }
+.ws-dust.d2 { animation-duration: 21s; background-size: 340px 260px; opacity: .35; }
+@keyframes dustdrift { from { background-position: 0 0 } to { background-position: -480px 28px } }
+.tumbleweed { position: absolute; bottom: 3vh; left: -12vw; width: 64px; height: 64px; animation: tumble 9s linear forwards; }
+.tumbleweed svg { width: 100%; height: 100%; animation: spin 1.6s linear infinite; }
+@keyframes tumble {
+  0% { transform: translateX(0) }
+  10% { transform: translateX(11vw) translateY(-14px) }
+  20% { transform: translateX(22vw) translateY(0) }
+  32% { transform: translateX(35vw) translateY(-9px) }
+  44% { transform: translateX(48vw) translateY(0) }
+  58% { transform: translateX(63vw) translateY(-12px) }
+  70% { transform: translateX(76vw) translateY(0) }
+  84% { transform: translateX(95vw) translateY(-6px) }
+  100% { transform: translateX(118vw) translateY(0) }
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+
+@media (prefers-reduced-motion: reduce) {
+  #scene *, #scene { animation: none !important; }
+}

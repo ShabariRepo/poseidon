@@ -107,7 +107,17 @@ vector fallback search) is the likely end state. Lessons to port: similarity
 thresholds tuned empirically (0.5 not 0.7), embedding-dim clamping, never fail
 silently — log recall misses.
 
-**v0.3.x — feel alive:** token streaming; diff viewer for edit approvals (side-by-side);
+**v0.4 — skins ✅ (shipped 2026-07-10):** skin system — CSS-variable palettes +
+per-skin vector scenes (crisp SVG, no low-poly), picker in header, persisted in
+localStorage. Shipped: **Poseidon** (base daylight waves), **Trek Wars** (deep-space
+starfield, 3 parallax layers + twinkle, nebulae, shooting stars, occasional
+hyperjump burst), **Ukiyo-e** (woodblock indigo waves scrolling on aged paper,
+foam-pearl crests + spiral curls, red sun, dash clouds), **Wasteland** (harsh sun
+haze, parallax dunes + derrick silhouette, drifting dust, heat shimmer, rolling
+tumbleweed). All reduced-motion safe. More skins are cheap now: palette block +
+scene builder.
+
+**v0.4.x — feel alive:** token streaming; diff viewer for edit approvals (side-by-side);
 session list + resume UI; Terminal tab (live run_command output); Ollama autodetect
 in onboarding + friendly connection errors ("is Ollama running?"); markdown
 rendering in chat.
