@@ -578,17 +578,26 @@ function ukiyoScene() {
   const flip = () => (Math.random() < 0.4 ? "transform:scaleX(-1)" : "");
   const wave = () => `wave${1 + Math.floor(Math.random() * 5)}.png`;
 
-  let waves = "";
-  // back row: smaller, hazier, dense
-  for (let left = -3; left <= 97; left += 8) {
-    const w = (8 + Math.random() * 3).toFixed(1);
-    waves += `<div class="uk-wave back" style="left:${(left + Math.random() * 2 - 1).toFixed(1)}%;width:${w}vw;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
-  }
-  // front row: bigger, overlapping — the sea covers the floor
-  for (let left = -5; left <= 95; left += 9) {
-    const w = (13 + Math.random() * 4).toFixed(1);
-    waves += `<div class="uk-wave front" style="left:${(left + Math.random() * 2 - 1).toFixed(1)}%;width:${w}vw;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
-  }
+  // The sea flows in one direction: each row is a 200vw conveyor track
+  // (waves duplicated at +100vw) drifting left and wrapping seamlessly.
+  // Individual waves bob up and down on their own rhythm.
+  const bob = () =>
+    `animation-duration:${(3 + Math.random() * 3).toFixed(1)}s;animation-delay:${(-Math.random() * 6).toFixed(1)}s`;
+  const buildRow = (cls, step, wMin, wVar) => {
+    let row = "";
+    for (let left = -4; left < 96; left += step) {
+      const w = (wMin + Math.random() * wVar).toFixed(1);
+      const x = (left + Math.random() * 3 - 1.5).toFixed(1);
+      const sprite = wave(), f = flip(), bb = bob();
+      for (const off of [0, 100]) {
+        row += `<div class="uk-wave ${cls}" style="left:${(parseFloat(x) + off).toFixed(1)}vw;width:${w}vw;${bb}"><img src="/static/img/${sprite}" alt="" style="${f}"></div>`;
+      }
+    }
+    return row;
+  };
+  const waves =
+    `<div class="uk-track uk-track-back">${buildRow("back", 8, 6, 6)}</div>` +
+    `<div class="uk-track uk-track-front">${buildRow("front", 9, 11, 8)}</div>`;
 
   let clouds = "";
   const pool = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
