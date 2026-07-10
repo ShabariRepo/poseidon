@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bonito-ai-labs/poseidon"
+Homepage = "https://github.com/ShabariRepo/poseidon"
 
 [project.scripts]
 poseidon = "poseidon.cli:main"

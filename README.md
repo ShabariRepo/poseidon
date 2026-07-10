@@ -52,7 +52,7 @@ cost meter, activity stream. See [PLAN.md](PLAN.md) for the roadmap
 ## Development
 
 ```bash
-git clone https://github.com/bonito-ai-labs/poseidon
+git clone https://github.com/ShabariRepo/poseidon
 cd poseidon
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/poseidon --no-browser
