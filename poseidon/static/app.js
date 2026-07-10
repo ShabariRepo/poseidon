@@ -570,33 +570,34 @@ function ukFuji() {
   return `<svg viewBox="0 0 220 170" width="100%" height="100%"><path d="M0,170 L82,38 Q95,20 108,38 L190,170 Z" fill="#5c719c"/><path d="M64,68 L82,38 Q95,20 108,38 L126,68 L114,60 L104,70 L94,58 L84,69 L74,60 Z" fill="${UK_CREAM}"/></svg>`;
 }
 
-/* Ukiyo scene sprites are raster cutouts (user-supplied art) in static/img/.
-   NOTE before open-sourcing: wave.png/cloud*.png derive from stock previews —
-   replace with AI-generated or the ukWaveSVG/ukCloudSVG vector fallbacks. */
+/* Ukiyo scene sprites in static/img/ are the user's own AI-generated art
+   (license-clean): wave1-5.png + cloud1-9.png, background-extracted. */
 function ukiyoScene() {
   const sway = () =>
     `animation-duration:${(5 + Math.random() * 4).toFixed(1)}s;animation-delay:${(-Math.random() * 8).toFixed(1)}s`;
   const flip = () => (Math.random() < 0.4 ? "transform:scaleX(-1)" : "");
+  const wave = () => `wave${1 + Math.floor(Math.random() * 5)}.png`;
 
   let waves = "";
   // back row: smaller, hazier
   [
     [5, 120], [22, 145], [40, 112], [58, 138], [76, 118], [91, 132],
   ].forEach(([left, w]) => {
-    waves += `<div class="uk-wave back" style="left:${left}%;width:${w}px;${sway()}"><img src="/static/img/wave.png" alt="" style="${flip()}"></div>`;
+    waves += `<div class="uk-wave back" style="left:${left}%;width:${w}px;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
   });
   // front row: bigger
   [
     [-2, 205], [17, 172], [36, 225], [57, 182], [75, 215], [90, 178],
   ].forEach(([left, w]) => {
-    waves += `<div class="uk-wave front" style="left:${left}%;width:${w}px;${sway()}"><img src="/static/img/wave.png" alt="" style="${flip()}"></div>`;
+    waves += `<div class="uk-wave front" style="left:${left}%;width:${w}px;${sway()}"><img src="/static/img/${wave()}" alt="" style="${flip()}"></div>`;
   });
 
   let clouds = "";
+  const pool = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
   [
-    [6, 6, 170, 1], [38, 13, 130, 2], [66, 11, 200, 6], [88, 19, 110, 3],
-  ].forEach(([left, top, w, n]) => {
-    clouds += `<div class="uk-cloud" style="left:${left}%;top:${top}%;width:${w}px;${sway()}"><img src="/static/img/cloud${n}.png" alt=""></div>`;
+    [6, 6, 170], [38, 13, 130], [66, 11, 200], [88, 19, 110],
+  ].forEach(([left, top, w], i) => {
+    clouds += `<div class="uk-cloud" style="left:${left}%;top:${top}%;width:${w}px;${sway()}"><img src="/static/img/cloud${pool[i]}.png" alt=""></div>`;
   });
 
   let petals = "";
