@@ -82,9 +82,17 @@ Decisions made:
 
 ## Roadmap
 
-**v0.2 — feel alive:** token streaming; diff viewer for edit approvals (side-by-side);
+**v0.2 — agentic core ✅ (shipped 2026-07-10):** task planning (`set_tasks` →
+live checklist tab), parallel subagents (`run_subagent`, fan-out via gather),
+scheduled runs (`schedule_task` / Schedules tab, SQLite + 20s poll loop;
+unattended runs auto-deny anything without an "always allow" rule — trust is
+earned first). Light "waves" UI: daylight palette, slow left↔right water wave
+along the bottom (Windows-7-login vibe), reduced-motion respected.
+
+**v0.2.x — feel alive:** token streaming; diff viewer for edit approvals (side-by-side);
 session list + resume UI; Terminal tab (live run_command output); Ollama autodetect
-in onboarding; markdown rendering in chat.
+in onboarding + friendly connection errors ("is Ollama running?"); markdown
+rendering in chat.
 
 **v0.3 — the cost story:** per-model cost breakdown pane; daily spend; failover
 chains (primary → fallback model on 429/5xx — the Bonito trick, local); optional

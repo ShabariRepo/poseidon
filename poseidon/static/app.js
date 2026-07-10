@@ -35,13 +35,23 @@ function handleEvent(ev) {
       break;
     case "tool_call":
       setThinking(false);
-      addToolChip(ev);
-      logActivity(`→ ${ev.name}`, describeArgs(ev), "");
+      if (!ev.agent) addToolChip(ev);
+      logActivity(`→ ${agentLabel(ev)}${ev.name}`, describeArgs(ev), ev.agent ? "sub" : "");
       setThinking(true);
       break;
     case "tool_result":
-      logActivity(`← ${ev.name}`, ev.summary, ev.ok ? "ok" : "err");
-      if (!ev.ok) addToolChip({ name: ev.name, error: ev.summary });
+      logActivity(`← ${agentLabel(ev)}${ev.name}`, ev.summary, ev.ok ? "ok" : "err");
+      if (!ev.ok && !ev.agent) addToolChip({ name: ev.name, error: ev.summary });
+      break;
+    case "subagent_started":
+      addToolChip({ name: `subagent ${ev.agent}`, args: { task: ev.task } });
+      logActivity(`⑂ ${ev.agent} started`, ev.task, "sub");
+      break;
+    case "subagent_complete":
+      logActivity(`⑂ ${ev.agent} done`, ev.result, "ok");
+      break;
+    case "tasks_update":
+      renderTasks(ev.tasks);
       break;
     case "approval_required":
       setThinking(false);
@@ -132,7 +142,11 @@ function setThinking(on) {
 
 function describeArgs(ev) {
   const a = ev.args || {};
-  return a.path || a.command || a.url || "";
+  return a.path || a.command || a.url || a.task || a.prompt || "";
+}
+
+function agentLabel(ev) {
+  return ev.agent ? `[${ev.agent}] ` : "";
 }
 
 function scrollChat() {
@@ -143,7 +157,12 @@ function scrollChat() {
 function renderApproval(ev) {
   const card = document.createElement("div");
   card.className = "approval";
-  const title = { write_file: "wants to write", edit_file: "wants to edit", run_command: "wants to run" }[ev.tool] || `wants: ${ev.tool}`;
+  const title = {
+    write_file: "wants to write",
+    edit_file: "wants to edit",
+    run_command: "wants to run",
+    schedule_task: "wants to schedule",
+  }[ev.tool] || `wants: ${ev.tool}`;
   card.innerHTML = `
     <h4>Poseidon ${title} <code></code></h4>
     <pre></pre>
@@ -185,6 +204,70 @@ function logActivity(label, detail, cls) {
   row.children[2].textContent = detail || "";
   feed.appendChild(row);
   feed.parentElement.scrollTop = feed.parentElement.scrollHeight;
+}
+
+/* ---------- workspace: tasks ---------- */
+function renderTasks(tasks) {
+  const list = $("task-list");
+  list.innerHTML = "";
+  if (!tasks.length) {
+    list.innerHTML = '<div class="feed-empty">No tasks right now.</div>';
+    return;
+  }
+  const dots = { pending: "○", in_progress: "◉", done: "✓" };
+  for (const t of tasks) {
+    const row = document.createElement("div");
+    row.className = `task-row ${t.status}`;
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.textContent = dots[t.status] || "○";
+    const title = document.createElement("span");
+    title.className = "title";
+    title.textContent = t.title;
+    row.append(dot, title);
+    list.appendChild(row);
+  }
+}
+
+/* ---------- workspace: schedules ---------- */
+async function loadSchedules() {
+  const r = await fetch("/api/schedules");
+  if (!r.ok) return;
+  const { schedules } = await r.json();
+  const list = $("schedule-list");
+  list.innerHTML = "";
+  if (!schedules.length) {
+    list.innerHTML =
+      '<div class="feed-empty">No scheduled tasks yet — ask Poseidon to do something "every morning" or "in an hour".</div>';
+    return;
+  }
+  for (const s of schedules) {
+    const card = document.createElement("div");
+    card.className = "schedule-card";
+    const when =
+      s.kind === "every" ? `every ${parseFloat(s.value)} min`
+      : s.kind === "daily" ? `daily at ${s.value}`
+      : `once at ${s.value}`;
+    card.innerHTML = `
+      <button class="ghost cancel">Cancel</button>
+      <span class="when"></span> — <span class="prompt"></span>
+      <div class="meta"></div>
+      <div class="last" hidden></div>`;
+    card.querySelector(".when").textContent = when;
+    card.querySelector(".prompt").textContent = s.prompt;
+    card.querySelector(".meta").textContent =
+      `next: ${s.next_run || "—"}${s.last_run ? ` · last: ${s.last_run}` : ""}`;
+    if (s.last_result) {
+      const last = card.querySelector(".last");
+      last.hidden = false;
+      last.textContent = `↳ ${s.last_result}`;
+    }
+    card.querySelector(".cancel").onclick = async () => {
+      await fetch(`/api/schedules/${s.id}`, { method: "DELETE" });
+      loadSchedules();
+    };
+    list.appendChild(card);
+  }
 }
 
 /* ---------- workspace: files ---------- */
@@ -266,6 +349,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     tab.classList.add("active");
     $(`tab-${tab.dataset.tab}`).classList.add("active");
     if (tab.dataset.tab === "files") loadFiles(currentPath);
+    if (tab.dataset.tab === "schedules") loadSchedules();
   };
 }
 

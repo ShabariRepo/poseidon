@@ -27,6 +27,13 @@ Three things the others don't do:
 3. **It knows what it costs.** A live cost meter — per session, per model, tokens
    in/out — built into the header. No more waking up to a burned API budget.
 
+And it's properly agentic, not just a chat with tools:
+
+- **Plans first** — multi-step work shows up as a live checklist in the workspace
+- **Subagents** — big chunks get delegated to parallel subagents with their own context
+- **Schedules** — "check this every morning" becomes a real scheduled run (approval-gated;
+  unattended runs can only do what an *Always allow* rule already covers)
+
 ## Works with any model
 
 Any OpenAI-compatible endpoint:
@@ -45,9 +52,9 @@ convention as every other harness. No new file formats to learn.
 
 ## Status
 
-Early. v0.1 is the core loop: chat, file tools, shell (with approvals), web fetch,
-cost meter, activity stream. See [PLAN.md](PLAN.md) for the roadmap
-(streaming, MCP, model failover, memory).
+Early. v0.2: the core loop (chat, file tools, shell with approvals, web fetch,
+cost meter, activity stream) plus task planning, parallel subagents, and scheduled
+runs. See [PLAN.md](PLAN.md) for the roadmap (streaming, MCP, model failover, memory).
 
 ## Development
 

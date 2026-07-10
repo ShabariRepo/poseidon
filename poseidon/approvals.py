@@ -16,6 +16,8 @@ def derive_pattern(tool: str, subject: str) -> str:
     if tool == "run_command":
         head = subject.split()[0] if subject.split() else subject
         return f"{head} *" if " " in subject else head
+    if tool == "schedule_task":
+        return "*"
     return str(PurePath(subject).parent / "*")
 
 
@@ -30,10 +32,13 @@ class ApprovalBroker:
             for r in rules
         )
 
-    async def request(self, emit, tool: str, subject: str, detail: str) -> dict:
+    async def request(self, emit, tool: str, subject: str, detail: str, unattended: bool = False) -> dict:
         """Returns {"approved": bool, "always": bool, "auto": bool}."""
         if self._rule_allows(tool, subject):
             return {"approved": True, "always": False, "auto": True}
+        if unattended:
+            # nobody's watching: only pre-earned trust ("always allow" rules) acts
+            return {"approved": False, "always": False, "auto": True, "unattended": True}
 
         aid = uuid.uuid4().hex[:12]
         fut: asyncio.Future = asyncio.get_event_loop().create_future()

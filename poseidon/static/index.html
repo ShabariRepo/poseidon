@@ -8,6 +8,14 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <div class="waves" aria-hidden="true">
+    <svg class="wave wave-back" viewBox="0 0 1440 320" preserveAspectRatio="none">
+      <path d="M0,192 C180,140 320,240 520,210 C720,180 860,90 1080,120 C1260,145 1360,200 1440,180 L1440,320 L0,320 Z"/>
+    </svg>
+    <svg class="wave wave-front" viewBox="0 0 1440 320" preserveAspectRatio="none">
+      <path d="M0,240 C220,190 380,280 600,250 C820,220 960,150 1160,180 C1310,202 1390,240 1440,230 L1440,320 L0,320 Z"/>
+    </svg>
+  </div>
   <header>
     <div class="brand">🔱 <strong>Poseidon</strong><span id="workdir" class="workdir"></span></div>
     <div class="header-right">
@@ -28,10 +36,18 @@
     <section id="workspace-pane">
       <nav class="tabs">
         <button class="tab active" data-tab="activity">Activity</button>
+        <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="files">Files</button>
+        <button class="tab" data-tab="schedules">Schedules</button>
       </nav>
       <div id="tab-activity" class="tab-body active">
         <div id="activity-feed" class="feed"><div class="feed-empty">Tool calls will stream here — watch it work.</div></div>
+      </div>
+      <div id="tab-tasks" class="tab-body">
+        <div id="task-list" class="task-list"><div class="feed-empty">When Poseidon plans multi-step work, its checklist appears here.</div></div>
+      </div>
+      <div id="tab-schedules" class="tab-body">
+        <div id="schedule-list" class="schedule-list"><div class="feed-empty">No scheduled tasks yet — ask Poseidon to do something "every morning" or "in an hour".</div></div>
       </div>
       <div id="tab-files" class="tab-body">
         <div id="file-breadcrumb" class="breadcrumb"></div>

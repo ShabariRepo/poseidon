@@ -13,6 +13,7 @@ from . import __version__
 from .approvals import ApprovalBroker
 from .config import CONFIG_DIR, PRESETS, load_config, save_config
 from .orchestrator import run_turn
+from .scheduler import Scheduler
 from .sessions import SessionStore
 from .tools.files import resolve_path
 
@@ -33,6 +34,28 @@ def create_app(workdir: Path) -> FastAPI:
             for q in queues.get(session_id, set()):
                 q.put_nowait({**ev, "session_id": session_id})
         return emit
+
+    async def scheduled_runner(prompt: str):
+        sid = store.create()
+        await run_turn(
+            workdir, store, sid, f"[scheduled run] {prompt}",
+            emitter(sid), broker, scheduler=scheduler, unattended=True,
+        )
+        msgs = store.get_messages(sid)
+        text = next(
+            (m.get("content") for m in reversed(msgs)
+             if isinstance(m, dict) and m.get("role") == "assistant" and m.get("content")),
+            "",
+        )
+        return sid, text
+
+    scheduler = Scheduler(CONFIG_DIR / "sessions.db", scheduled_runner)
+
+    @app.on_event("startup")
+    async def _start_scheduler():
+        task = asyncio.create_task(scheduler.loop())
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
 
     @app.middleware("http")
     async def localhost_only(request: Request, call_next):
@@ -122,7 +145,7 @@ def create_app(workdir: Path) -> FastAPI:
 
         async def run():
             try:
-                await run_turn(workdir, store, sid, message, emitter(sid), broker)
+                await run_turn(workdir, store, sid, message, emitter(sid), broker, scheduler=scheduler)
             finally:
                 busy.discard(sid)
 
@@ -136,6 +159,16 @@ def create_app(workdir: Path) -> FastAPI:
         ok = broker.resolve(aid, bool(body.get("approved")), bool(body.get("always")))
         if not ok:
             raise HTTPException(404, "no pending approval with that id")
+        return {"ok": True}
+
+    @app.get("/api/schedules")
+    async def get_schedules():
+        return {"schedules": scheduler.list()}
+
+    @app.delete("/api/schedules/{sid}")
+    async def delete_schedule(sid: str):
+        if not scheduler.cancel(sid):
+            raise HTTPException(404, "no schedule with that id")
         return {"ok": True}
 
     @app.get("/api/files")
