@@ -269,9 +269,22 @@ dialog a { color: var(--accent); }
 @keyframes stardrift { from { transform: translate(0, 0) } to { transform: translate(-2.2%, -1.4%) } }
 .star-layer .tw { animation: twinkle 3.5s ease-in-out infinite; }
 @keyframes twinkle { 0%, 100% { opacity: .95 } 50% { opacity: .25 } }
-.nebula { position: absolute; border-radius: 50%; filter: none; }
-.nebula.n1 { width: 55vw; height: 55vw; top: -18vw; right: -12vw; background: radial-gradient(circle, rgba(108, 78, 178, .16) 0%, rgba(108, 78, 178, 0) 62%); }
-.nebula.n2 { width: 45vw; height: 45vw; bottom: -14vw; left: -10vw; background: radial-gradient(circle, rgba(35, 140, 160, .13) 0%, rgba(35, 140, 160, 0) 62%); }
+.nebula { position: absolute; border-radius: 50%; animation: nebdrift 90s ease-in-out infinite alternate; }
+.nebula.n1 { width: 55vw; height: 55vw; top: -18vw; right: -12vw; background: radial-gradient(circle, rgba(108, 78, 178, .2) 0%, rgba(108, 78, 178, 0) 62%); }
+.nebula.n2 { width: 45vw; height: 45vw; bottom: -14vw; left: -10vw; background: radial-gradient(circle, rgba(35, 140, 160, .16) 0%, rgba(35, 140, 160, 0) 62%); animation-duration: 120s; animation-direction: alternate-reverse; }
+.nebula.n3 { width: 34vw; height: 34vw; top: 24%; left: 22%; background: radial-gradient(circle, rgba(190, 82, 152, .13) 0%, rgba(190, 82, 152, 0) 60%); animation-duration: 105s; animation-delay: -40s; }
+.nebula.n4 { width: 28vw; height: 28vw; bottom: 12%; right: 24%; background: radial-gradient(circle, rgba(70, 110, 210, .14) 0%, rgba(70, 110, 210, 0) 60%); animation-duration: 140s; animation-direction: alternate-reverse; animation-delay: -70s; }
+@keyframes nebdrift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(4vw, -3vh) scale(1.14); }
+}
+.planet { position: absolute; opacity: .95; transition: opacity .45s ease-in, transform .9s ease-out; }
+.planet.departing { opacity: 0; transform: scale(.92); }
+.planet.arriving { animation: arrive .9s ease-out; }
+@keyframes arrive {
+  from { opacity: 0; transform: scale(.6); }
+  to { opacity: .95; transform: scale(1); }
+}
 .shooting-star { position: absolute; top: 14%; right: 6%; width: 150px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(255,255,255,.95), rgba(255,255,255,0)); opacity: 0; animation: shoot 26s linear infinite; }
 .shooting-star.s2 { top: 58%; right: 20%; animation-delay: 13s; animation-duration: 31s; }
 @keyframes shoot {

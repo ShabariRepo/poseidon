@@ -447,9 +447,69 @@ function jumpSVG() {
   return `<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" stroke="#dfeeff" width="100%" height="100%">${c}</svg>`;
 }
 
+/* Procedural planet: new world every hyperjump — palette, bands, clouds,
+   craters, ice caps, sometimes rings or a moon. */
+let planetSeq = 0;
+function planetSVG() {
+  const id = `pg${planetSeq++}`;
+  const h = Math.floor(Math.random() * 360);
+  const light = `hsl(${h},62%,60%)`, base = `hsl(${h},55%,42%)`, dark = `hsl(${h},58%,25%)`;
+  let inner = "";
+  if (Math.random() < 0.55) {
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      inner += `<ellipse cx="100" cy="${(40 + Math.random() * 120).toFixed(0)}" rx="96" ry="${(8 + Math.random() * 16).toFixed(0)}" fill="${Math.random() < 0.5 ? light : dark}" opacity="0.28"/>`;
+    }
+  }
+  if (Math.random() < 0.6) {
+    for (let i = 0; i < 4; i++) {
+      const x = 25 + Math.random() * 120, y = 30 + Math.random() * 140;
+      inner += `<path d="M${x.toFixed(0)},${y.toFixed(0)} q14,-9 30,-3 q16,5 26,-2" stroke="rgba(255,255,255,0.5)" stroke-width="${(5 + Math.random() * 5).toFixed(1)}" fill="none" stroke-linecap="round"/>`;
+    }
+  }
+  if (Math.random() < 0.45) {
+    for (let i = 0; i < 5; i++) {
+      const r = 4 + Math.random() * 9, x = 45 + Math.random() * 110, y = 45 + Math.random() * 110;
+      inner += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${r.toFixed(1)}" fill="${dark}" opacity="0.6"/><circle cx="${(x - r * 0.25).toFixed(0)}" cy="${(y - r * 0.25).toFixed(0)}" r="${(r * 0.65).toFixed(1)}" fill="${base}" opacity="0.55"/>`;
+    }
+  }
+  if (Math.random() < 0.35) {
+    inner += `<ellipse cx="100" cy="26" rx="46" ry="16" fill="rgba(255,255,255,0.75)"/><ellipse cx="100" cy="176" rx="40" ry="14" fill="rgba(255,255,255,0.55)"/>`;
+  }
+  const ring = Math.random() < 0.3;
+  const ringCol = `hsl(${(h + 45) % 360},48%,72%)`;
+  const moon = Math.random() < 0.35
+    ? `<circle cx="183" cy="36" r="9" fill="#b9c0cc"/><circle cx="180" cy="34" r="3" fill="#98a0ad"/>`
+    : "";
+  return `<svg viewBox="0 0 200 200" width="100%" height="100%"><defs>
+    <radialGradient id="${id}b" cx="38%" cy="35%"><stop offset="0%" stop-color="${light}"/><stop offset="70%" stop-color="${base}"/><stop offset="100%" stop-color="${dark}"/></radialGradient>
+    <linearGradient id="${id}t" x1="0" y1="0" x2="1" y2="0.25"><stop offset="55%" stop-color="rgba(2,6,18,0)"/><stop offset="100%" stop-color="rgba(2,6,18,0.55)"/></linearGradient>
+    <clipPath id="${id}c"><circle cx="100" cy="100" r="80"/></clipPath></defs>
+    <circle cx="100" cy="100" r="87" fill="${light}" opacity="0.13"/>
+    ${ring ? `<ellipse cx="100" cy="100" rx="128" ry="30" fill="none" stroke="${ringCol}" stroke-width="7" opacity="0.5" transform="rotate(-18 100 100)"/>` : ""}
+    <circle cx="100" cy="100" r="80" fill="url(#${id}b)"/>
+    <g clip-path="url(#${id}c)">${inner}<rect width="200" height="200" fill="url(#${id}t)"/></g>
+    ${ring ? `<path d="M-28,100 A128,30 0 0 0 228,100" transform="rotate(-18 100 100)" fill="none" stroke="${ringCol}" stroke-width="7" opacity="0.85"/>` : ""}
+    ${moon}</svg>`;
+}
+
+const PLANET_SPOTS = [
+  { left: "8%", top: "15%" }, { right: "13%", top: "13%" }, { left: "12%", bottom: "16%" },
+  { right: "9%", bottom: "20%" }, { left: "40%", top: "7%" },
+];
+function rollPlanet(el) {
+  const spot = PLANET_SPOTS[Math.floor(Math.random() * PLANET_SPOTS.length)];
+  el.style.left = el.style.right = el.style.top = el.style.bottom = "auto";
+  Object.assign(el.style, spot);
+  const size = 150 + Math.floor(Math.random() * 130);
+  el.style.width = el.style.height = `${size}px`;
+  el.innerHTML = planetSVG();
+}
+
 function trekScene() {
-  return `<div class="nebula n1"></div><div class="nebula n2"></div>
-    ${starsSVG(150, 0.8, "l1")}${starsSVG(90, 1.2, "l2")}${starsSVG(40, 1.8, "l3")}
+  return `<div class="nebula n1"></div><div class="nebula n2"></div><div class="nebula n3"></div><div class="nebula n4"></div>
+    ${starsSVG(260, 0.8, "l1")}${starsSVG(150, 1.2, "l2")}${starsSVG(70, 1.8, "l3")}
+    <div class="planet"></div>
     <div class="shooting-star"></div><div class="shooting-star s2"></div>
     <div class="hyperjump">${jumpSVG()}</div>`;
 }
@@ -643,6 +703,9 @@ function wastelandScene() {
 const SCENES = { base: baseScene, trek: trekScene, ukiyo: ukiyoScene, wasteland: wastelandScene };
 
 const SCENE_SETUP = {
+  trek(scene) {
+    rollPlanet(scene.querySelector(".planet"));
+  },
   wasteland(scene) {
     scene.querySelector(".ws-dust").style.backgroundImage = dustTile(34, "#9a6f3c", 480, 360);
     scene.querySelector(".ws-dust.d2").style.backgroundImage = dustTile(24, "#b58a52", 340, 260);
@@ -657,7 +720,18 @@ const SCENE_SETUP = {
 function scheduleHyperjump(delay) {
   skinTimers.push(setTimeout(() => {
     const scene = $("scene");
+    const planet = scene.querySelector(".planet");
     scene.classList.add("jumping");
+    if (planet) planet.classList.add("departing");
+    skinTimers.push(setTimeout(() => {
+      // arrive at a new world as the streaks fade
+      if (planet) {
+        rollPlanet(planet);
+        planet.classList.remove("departing");
+        planet.classList.add("arriving");
+        skinTimers.push(setTimeout(() => planet.classList.remove("arriving"), 900));
+      }
+    }, 900));
     skinTimers.push(setTimeout(() => scene.classList.remove("jumping"), 1600));
     scheduleHyperjump(35000 + Math.random() * 40000);
   }, delay));
