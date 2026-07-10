@@ -459,53 +459,51 @@ function svgUrl(svg) {
   return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
 }
 
-/* One woodblock wave mound: solid body, scalloped foam cap, contour arcs, spiral curl. */
-function ukMound(cx, baseY, r, fill) {
-  const pt = (rr, deg) => {
-    const a = (deg * Math.PI) / 180;
-    return `${(cx + rr * Math.cos(a)).toFixed(1)},${(baseY - rr * Math.sin(a)).toFixed(1)}`;
-  };
-  let out = `<path d="M${pt(r, 180)} A${r},${r} 0 0 1 ${pt(r, 0)} Z" fill="${fill}"/>`;
-  // scalloped foam cap: bumps riding the outer rim, inner edge at r-12
-  const n = Math.max(6, Math.round(r / 11));
-  let cap = `M${pt(r, 180)} `;
-  for (let i = 0; i < n; i++) {
-    const a1 = 180 - (180 / n) * i, a2 = 180 - (180 / n) * (i + 1);
-    cap += `Q${pt(r + 9, (a1 + a2) / 2)} ${pt(r, a2)} `;
-  }
-  cap += `L${pt(r - 12, 0)} A${r - 12},${r - 12} 0 0 0 ${pt(r - 12, 180)} Z`;
-  out += `<path d="${cap}" fill="${UK_CREAM}"/>`;
-  // contour arcs following the mound
-  for (const f of [0.62, 0.38]) {
-    out += `<path d="M${pt(r * f, 165)} A${r * f},${r * f} 0 0 1 ${pt(r * f, 15)}" fill="none" stroke="${UK_CREAM}" stroke-width="3" stroke-linecap="round"/>`;
-  }
-  // spiral curl in bigger mounds
-  if (r > 72) {
-    const scx = cx - r * 0.1, scy = baseY - r * 0.42, r1 = r * 0.3;
-    let d = "", steps = 26;
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps, a = t * Math.PI * 2 * 1.9, rr = 3 + (r1 - 3) * t;
-      d += `${i ? "L" : "M"}${(scx + rr * Math.cos(a)).toFixed(1)},${(scy - rr * Math.sin(a)).toFixed(1)}`;
-    }
-    out += `<path d="${d}" fill="none" stroke="${UK_CREAM}" stroke-width="3.5" stroke-linecap="round"/>`;
-  }
-  return out;
+/* Great-Wave sprite: solid curl body, face streaks, pearl-scalloped crest
+   foam, claws under the lip, foam piles at both bases. */
+function ukWaveSVG(p) {
+  return `<svg viewBox="0 0 320 260" width="100%" height="100%">
+  <path d="M16,250 C6,190 14,104 54,60 C94,20 158,10 206,34 C246,54 260,98 244,132 C235,152 216,162 199,159 C187,157 180,147 183,136 C172,127 165,112 164,96 C146,110 126,134 106,166 C94,190 88,220 88,250 Z" fill="${p.body}" stroke="${p.line}" stroke-width="3"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M92,244 C100,196 122,152 160,118" stroke="${p.streak}" stroke-width="14"/>
+    <path d="M116,248 C126,210 146,176 178,148" stroke="${p.streak}" stroke-width="10"/>
+    <path d="M64,240 C68,186 88,138 124,100" stroke="${p.pale}" stroke-width="8"/>
+    <path d="M96,74 C140,42 188,44 216,74" stroke="${p.streak}" stroke-width="12"/>
+    <path d="M110,60 C150,36 190,38 214,58" stroke="${p.pale}" stroke-width="6"/>
+  </g>
+  <g fill="none" stroke="${p.foam}" stroke-linecap="round">
+    <path d="M36,118 C50,58 104,20 160,18 C206,20 240,48 246,92 C247,114 234,132 214,138" stroke-width="15"/>
+    <path d="M36,118 C50,58 104,20 160,18 C206,20 240,48 246,92 C247,114 234,132 214,138" stroke-width="22" stroke-dasharray="0,32"/>
+  </g>
+  <g fill="${p.foam}">
+    <path d="M212,142 q10,20 2,32 q-6,-18 -10,-24 z"/><path d="M196,148 q8,20 -2,30 q-5,-17 -8,-22 z"/>
+    <path d="M180,146 q6,17 -3,26 q-4,-15 -6,-19 z"/><path d="M166,138 q5,15 -3,23 q-3,-13 -5,-16 z"/>
+    <path d="M228,128 q12,14 8,28 q-8,-14 -13,-19 z"/>
+    <circle cx="34" cy="242" r="14"/><circle cx="54" cy="234" r="11"/><circle cx="70" cy="244" r="13"/><circle cx="20" cy="252" r="10"/>
+    <circle cx="90" cy="248" r="10"/><circle cx="106" cy="242" r="8"/>
+    <circle cx="206" cy="242" r="16"/><circle cx="228" cy="234" r="12"/><circle cx="248" cy="244" r="14"/><circle cx="268" cy="252" r="10"/>
+    <circle cx="188" cy="250" r="10"/><circle cx="222" cy="252" r="9"/>
+  </g>
+  <g fill="${p.shadow}">
+    <circle cx="46" cy="252" r="9"/><circle cx="80" cy="254" r="8"/><circle cx="216" cy="250" r="9"/><circle cx="252" cy="254" r="8"/>
+  </g></svg>`;
 }
 
-/* Seamless 600px band: staggered back row + front row of mounds. */
-function ukBandTile(backFill, frontFill) {
-  let m = "";
-  const backR = [52, 58, 50, 60, 52];
-  [0, 150, 300, 450, 600].forEach((x, i) => (m += ukMound(x, 118, backR[i], backFill)));
-  const frontR = [82, 68, 78, 70];
-  [75, 225, 375, 525].forEach((x, i) => (m += ukMound(x, 132, frontR[i], frontFill)));
-  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="132" viewBox="0 0 600 132">${m}</svg>`);
-}
+const UK_DEEP = { body: "#1e4f9c", line: "#16345f", streak: "#3a70bd", pale: "#9db8d9", foam: "#f4f6f8", shadow: "#c5d2e0" };
+const UK_PALE = { body: "#4a74ad", line: "#33608f", streak: "#6d92bb", pale: "#a9c0dc", foam: "#f4f6f8", shadow: "#cbd7e4" };
 
-function ukCloudTile() {
-  const puff = (x, y) =>
-    `<rect x="${x}" y="${y + 20}" width="190" height="16" rx="8"/><rect x="${x + 34}" y="${y}" width="118" height="16" rx="8"/><rect x="${x + 16}" y="${y + 40}" width="140" height="16" rx="8"/>`;
-  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="900" height="120" viewBox="0 0 900 120"><g fill="#f8f1dc" opacity="0.95">${puff(50, 22)}${puff(500, 42)}</g><g fill="#dccfa8" opacity="0.6"><rect x="86" y="98" width="130" height="10" rx="5"/><rect x="540" y="116" width="150" height="10" rx="5"/></g></svg>`);
+/* Swirl cloud in the classic style: puffy top, flat base, negative-space spirals. */
+function ukCloudSVG() {
+  return `<svg viewBox="0 0 220 110" width="100%" height="100%">
+  <g fill="#ffffff">
+    <circle cx="52" cy="62" r="24"/><circle cx="88" cy="46" r="29"/><circle cx="128" cy="50" r="26"/><circle cx="162" cy="64" r="19"/>
+    <rect x="30" y="62" width="150" height="22" rx="11"/>
+  </g>
+  <g fill="none" stroke="#ece0c4" stroke-width="5" stroke-linecap="round">
+    <path d="M70,64 C70,52 82,46 92,52 C100,57 100,68 92,72 C86,75 79,72 78,66 C77,61 82,58 86,60"/>
+    <path d="M124,66 C123,54 135,47 145,53 C152,58 152,68 145,72 C139,74 133,71 133,65"/>
+  </g>
+  <path d="M180,66 C196,58 208,62 212,72 C206,68 196,68 188,74 C184,77 180,72 180,66 Z" fill="#ffffff"/></svg>`;
 }
 
 function ukFuji() {
@@ -513,6 +511,31 @@ function ukFuji() {
 }
 
 function ukiyoScene() {
+  const sway = () =>
+    `animation-duration:${(5 + Math.random() * 4).toFixed(1)}s;animation-delay:${(-Math.random() * 8).toFixed(1)}s`;
+  const flip = () => (Math.random() < 0.4 ? "transform:scaleX(-1)" : "");
+
+  let waves = "";
+  // back row: smaller, paler
+  [
+    [5, 120], [22, 145], [40, 112], [58, 138], [76, 118], [91, 132],
+  ].forEach(([left, w]) => {
+    waves += `<div class="uk-wave back" style="left:${left}%;width:${w}px;height:${Math.round(w * 0.81)}px;${sway()}"><div style="width:100%;height:100%;${flip()}">${ukWaveSVG(UK_PALE)}</div></div>`;
+  });
+  // front row: bigger, deeper
+  [
+    [-2, 205], [17, 172], [36, 225], [57, 182], [75, 215], [90, 178],
+  ].forEach(([left, w]) => {
+    waves += `<div class="uk-wave front" style="left:${left}%;width:${w}px;height:${Math.round(w * 0.81)}px;${sway()}"><div style="width:100%;height:100%;${flip()}">${ukWaveSVG(UK_DEEP)}</div></div>`;
+  });
+
+  let clouds = "";
+  [
+    [6, 6, 170], [38, 13, 130], [66, 11, 200], [88, 19, 110],
+  ].forEach(([left, top, w]) => {
+    clouds += `<div class="uk-cloud" style="left:${left}%;top:${top}%;width:${w}px;height:${Math.round(w * 0.5)}px;${sway()}">${ukCloudSVG()}</div>`;
+  });
+
   let petals = "";
   for (let i = 0; i < 8; i++) {
     const left = (4 + Math.random() * 88).toFixed(0);
@@ -521,8 +544,9 @@ function ukiyoScene() {
     const s = (10 + Math.random() * 8).toFixed(0);
     petals += `<span class="petal" style="left:${left}%;animation-duration:${dur}s;animation-delay:${delay}s"><svg width="${s}" height="${s}" viewBox="0 0 16 16"><path d="M8,1 C11,4 14,6 13,10 C12,14 8,15 8,15 C8,15 4,14 3,10 C2,6 5,4 8,1 Z" fill="#eaa8ba"/></svg></span>`;
   }
-  return `<div class="uk-sun"></div><div class="uk-clouds"></div><div class="uk-fuji">${ukFuji()}</div>
-    <div class="uk-band uk-back"></div><div class="uk-band uk-mid"></div><div class="uk-band uk-front"></div>${petals}`;
+
+  return `<div class="uk-sun"></div>${clouds}<div class="uk-fuji">${ukFuji()}</div>
+    <div class="uk-sea"></div>${waves}${petals}`;
 }
 
 /* ---- wasteland ---- */
@@ -598,7 +622,11 @@ function banditSVG() {
     <path d="M116,31 L100,37 L115,40 Z" fill="#7a1f14"/>
     <path d="M162,37 L175,37 L175,42 L168,42 L168,48 L162,48 Z"/>
   </g>
-  <g class="flash"><path d="M177,39 L191,34 L183,40 L194,41 L183,43 L190,49 L177,43 Z" fill="#ffd76a" stroke="#fff8e0" stroke-width="1"/></g></svg>`;
+  <g class="flash">
+    <circle cx="188" cy="43" r="15" fill="#ffe9a8" opacity="0.6"/>
+    <path d="M176,39 L201,28 L188,40 L207,42 L188,46 L200,56 L179,45 L182,42 Z" fill="#ffd76a" stroke="#fff8e0" stroke-width="1.5"/>
+    <path d="M181,42 L194,40 L184,45 Z" fill="#fff"/>
+  </g></svg>`;
 }
 
 function wastelandScene() {
@@ -615,12 +643,6 @@ function wastelandScene() {
 const SCENES = { base: baseScene, trek: trekScene, ukiyo: ukiyoScene, wasteland: wastelandScene };
 
 const SCENE_SETUP = {
-  ukiyo(scene) {
-    scene.querySelector(".uk-clouds").style.backgroundImage = ukCloudTile();
-    scene.querySelector(".uk-back").style.backgroundImage = ukBandTile("#8aa8c9", "#6d92bb");
-    scene.querySelector(".uk-mid").style.backgroundImage = ukBandTile("#4a76a6", "#33608f");
-    scene.querySelector(".uk-front").style.backgroundImage = ukBandTile("#28497a", "#1d3a63");
-  },
   wasteland(scene) {
     scene.querySelector(".ws-dust").style.backgroundImage = dustTile(34, "#9a6f3c", 480, 360);
     scene.querySelector(".ws-dust.d2").style.backgroundImage = dustTile(24, "#b58a52", 340, 260);

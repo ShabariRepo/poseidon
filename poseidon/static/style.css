@@ -289,18 +289,19 @@ dialog a { color: var(--accent); }
   100% { opacity: 0; transform: scale(1.9); }
 }
 
-/* ---- ukiyo: scrolling woodblock waves, sun, Fuji, petals ---- */
-.uk-band { position: absolute; left: 0; right: 0; bottom: 0; background-repeat: repeat-x; background-position: 0 bottom; background-size: auto 100%; }
-.uk-back  { height: 26vh; opacity: .8; animation: scroll600 110s linear infinite, bob 11s ease-in-out infinite alternate; }
-.uk-mid   { height: 19vh; opacity: .92; animation: scroll600r 70s linear infinite, bob 9s ease-in-out infinite alternate-reverse; }
-.uk-front { height: 13vh; animation: scroll600 44s linear infinite, bob 7s ease-in-out infinite alternate; }
-@keyframes scroll600 { from { background-position-x: 0 } to { background-position-x: -600px } }
-@keyframes scroll600r { from { background-position-x: 0 } to { background-position-x: 600px } }
+/* ---- ukiyo: sprite waves that bob and sway, swirl clouds, sun, Fuji, petals ---- */
 @keyframes bob { from { transform: translateY(0) } to { transform: translateY(7px) } }
 .uk-sun { position: absolute; top: 10%; left: 33%; width: 110px; height: 110px; border-radius: 50%; background: #bf3b2b; }
-.uk-fuji { position: absolute; right: 8%; bottom: 13vh; width: 260px; height: 200px; opacity: .9; }
-.uk-clouds { position: absolute; top: 4%; left: 0; right: 0; height: 110px; background-repeat: repeat-x; background-size: auto 100%; animation: scroll900 240s linear infinite; }
-@keyframes scroll900 { from { background-position-x: 0 } to { background-position-x: -900px } }
+.uk-fuji { position: absolute; right: 8%; bottom: 5vh; width: 260px; height: 200px; opacity: .9; }
+.uk-sea { position: absolute; left: 0; right: 0; bottom: 0; height: 7vh; background: #1d3a63; }
+.uk-wave { position: absolute; animation: uksway 7s ease-in-out infinite alternate; }
+.uk-wave.back { bottom: 8vh; opacity: .92; }
+.uk-wave.front { bottom: 1vh; }
+@keyframes uksway {
+  from { transform: translate(-7px, 2px) rotate(-1deg); }
+  to { transform: translate(7px, -4px) rotate(1.2deg); }
+}
+.uk-cloud { position: absolute; animation: uksway 9s ease-in-out infinite alternate; opacity: .96; }
 .petal { position: absolute; top: -5vh; animation: petalfall 22s linear infinite; opacity: 0; }
 @keyframes petalfall {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
@@ -324,8 +325,8 @@ dialog a { color: var(--accent); }
 .ws-dust.d2 { animation-duration: 21s; background-size: 340px 260px; opacity: .35; }
 @keyframes dustdrift { from { background-position: 0 0 } to { background-position: -480px 28px } }
 
-/* the caravan: trots in place while the desert scrolls past */
-.caravan { position: absolute; bottom: 8.5vh; left: 16%; width: 300px; height: 142px; animation: bob 1.1s ease-in-out infinite alternate; }
+/* the caravan: trots in place on the right while the desert scrolls past */
+.caravan { position: absolute; bottom: 8.5vh; right: 8%; width: 300px; height: 142px; animation: bob 1.1s ease-in-out infinite alternate; }
 .leg { transform-box: fill-box; transform-origin: 50% 6%; }
 .caravan .lg1, .caravan .lg1b { animation: trot .55s ease-in-out infinite alternate; }
 .caravan .lg2, .caravan .lg2b { animation: trot .55s ease-in-out infinite alternate-reverse; }
@@ -334,8 +335,8 @@ dialog a { color: var(--accent); }
 .cdust { opacity: .35; animation: puff .9s linear infinite; }
 @keyframes puff { from { transform: translate(0, 0) scale(1); } to { transform: translate(-20px, -6px) scale(1.6); opacity: 0; } }
 
-/* the bandit: offscreen until the chase */
-.bandit { position: absolute; bottom: 8.5vh; left: 16%; width: 210px; height: 118px; transform: translateX(-60vw); }
+/* the bandit: offscreen left until the chase */
+.bandit { position: absolute; bottom: 8.5vh; right: 8%; width: 210px; height: 118px; transform: translateX(-105vw); }
 .bandit .gl1, .bandit .gl1b { animation: gallop .3s ease-in-out infinite alternate; }
 .bandit .gl2, .bandit .gl2b { animation: gallop .3s ease-in-out infinite alternate-reverse; }
 @keyframes gallop { from { transform: rotate(-17deg) } to { transform: rotate(19deg) } }
@@ -343,19 +344,21 @@ dialog a { color: var(--accent); }
 
 #scene.chase .bandit { animation: banditRun 13.5s ease-in-out forwards; }
 @keyframes banditRun {
-  0% { transform: translateX(-60vw); }
-  24% { transform: translateX(-13vw) translateY(-2px); }
-  40% { transform: translateX(-11.5vw); }
-  62% { transform: translateX(-14vw); }
-  100% { transform: translateX(-70vw); }
+  0% { transform: translateX(-105vw); }
+  24% { transform: translateX(-24vw) translateY(-2px); }
+  40% { transform: translateX(-21vw); }
+  62% { transform: translateX(-26vw); }
+  100% { transform: translateX(-110vw); }
 }
 #scene.chase .flash { animation: flashpop 13.5s linear forwards; }
 @keyframes flashpop {
-  0%, 26% { opacity: 0; }
+  0%, 26.5% { opacity: 0; }
   27.5% { opacity: 1; }
   29% { opacity: 0; }
-  32.5% { opacity: 1; }
-  34% { opacity: 0; }
+  30.5% { opacity: 1; }
+  32% { opacity: 0; }
+  34% { opacity: 1; }
+  36% { opacity: 0; }
   100% { opacity: 0; }
 }
 /* the caravan bolts */
