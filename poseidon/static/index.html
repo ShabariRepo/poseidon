@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Poseidon</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔱</text></svg>" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">🔱 <strong>Poseidon</strong><span id="workdir" class="workdir"></span></div>
+    <div class="header-right">
+      <span id="cost" class="cost" title="Session cost (tokens in/out)">$0.0000</span>
+      <button id="settings-btn" class="ghost" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="chat-pane">
+      <div id="messages"></div>
+      <form id="chat-form" autocomplete="off">
+        <textarea id="chat-input" rows="1" placeholder="Ask Poseidon to do something…"></textarea>
+        <button id="send-btn" type="submit">Send</button>
+      </form>
+    </section>
+
+    <section id="workspace-pane">
+      <nav class="tabs">
+        <button class="tab active" data-tab="activity">Activity</button>
+        <button class="tab" data-tab="files">Files</button>
+      </nav>
+      <div id="tab-activity" class="tab-body active">
+        <div id="activity-feed" class="feed"><div class="feed-empty">Tool calls will stream here — watch it work.</div></div>
+      </div>
+      <div id="tab-files" class="tab-body">
+        <div id="file-breadcrumb" class="breadcrumb"></div>
+        <div id="file-list" class="file-list"></div>
+        <pre id="file-view" class="file-view" hidden></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>open-source agent harness</span>
+    <a href="#" id="about-link">made by Bonito AI Labs</a>
+  </footer>
+
+  <dialog id="settings-modal">
+    <h2>Provider</h2>
+    <p class="muted">Any OpenAI-compatible endpoint works. Keys never leave this machine.</p>
+    <label>Preset
+      <select id="preset-select"></select>
+    </label>
+    <label>Base URL
+      <input id="cfg-base-url" placeholder="https://api.openai.com/v1" />
+    </label>
+    <label>API key
+      <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" />
+    </label>
+    <label>Model
+      <input id="cfg-model" placeholder="gpt-4o-mini" />
+    </label>
+    <div class="modal-actions">
+      <button id="cfg-save">Save</button>
+      <button class="ghost" id="cfg-cancel">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog id="about-modal">
+    <h2>🔱 Poseidon</h2>
+    <p>An open-source agent harness that runs on your machine and opens as a chat.
+       Every action is visible, every risky step asks first, and the meter always
+       shows what you're spending.</p>
+    <p>Made by <strong>Bonito AI Labs</strong> — the team behind
+       <a href="https://getbonito.com" target="_blank" rel="noopener">Bonito</a>,
+       an AI gateway for teams: one key for every provider, failover, cost tracking,
+       and governance.</p>
+    <div class="modal-actions">
+      <button class="ghost" id="about-close">Close</button>
+    </div>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

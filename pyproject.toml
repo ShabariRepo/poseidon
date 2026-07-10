@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "poseidon-ai"
+version = "0.1.0"
+description = "Open-source agent harness that opens as a chat in your browser. Watch it work, approve what matters, see what it costs."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Bonito AI Labs" }]
+keywords = ["agent", "harness", "ai", "assistant", "local-first"]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+]
+
+[project.urls]
+Homepage = "https://github.com/bonito-ai-labs/poseidon"
+
+[project.scripts]
+poseidon = "poseidon.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["poseidon"]
