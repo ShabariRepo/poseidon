@@ -89,7 +89,25 @@ unattended runs auto-deny anything without an "always allow" rule — trust is
 earned first). Light "waves" UI: daylight palette, slow left↔right water wave
 along the bottom (Windows-7-login vibe), reduced-motion respected.
 
-**v0.2.x — feel alive:** token streaming; diff viewer for edit approvals (side-by-side);
+**v0.3 — persistent memory ✅ (shipped 2026-07-10, file school):** markdown files
+in `~/.poseidon/memory/` + `MEMORY.md` index injected into the system prompt each
+session; `save_memory` / `read_memory` / `forget_memory` tools. Transparent by
+design — the user can open and edit their agent's memory in a text editor.
+
+**Memory A/B experiment (do NOT drop the vector school):** once file memory has
+real usage, build a vector recall path (embed memories, similarity search at
+turn start — local embeddings via Ollama, or any OpenAI-compat embedding endpoint)
+behind a `memory_backend: files | vector | hybrid` config flag, and A/B them on
+the same memory corpus: recall hit-rate, precision (irrelevant-memory injections),
+token cost per turn, and "did the agent ask something it should have known".
+Hypothesis from Bonito scar tissue: files win under ~200 memories on transparency
++ zero silent-failure modes (threshold/dim-mismatch bugs); vector starts winning
+on recall once the index outgrows the prompt budget. Hybrid (index in prompt +
+vector fallback search) is the likely end state. Lessons to port: similarity
+thresholds tuned empirically (0.5 not 0.7), embedding-dim clamping, never fail
+silently — log recall misses.
+
+**v0.3.x — feel alive:** token streaming; diff viewer for edit approvals (side-by-side);
 session list + resume UI; Terminal tab (live run_command output); Ollama autodetect
 in onboarding + friendly connection errors ("is Ollama running?"); markdown
 rendering in chat.

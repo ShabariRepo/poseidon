@@ -13,6 +13,7 @@ from pathlib import Path
 
 import httpx
 
+from . import memory as memory_store
 from .config import load_config
 from .costs import compute_cost
 from .tools import TOOLS, tool_schemas
@@ -26,6 +27,7 @@ Be warm, direct, and first-person. Understand what the user actually wants — i
 For multi-step work, call set_tasks first with a short checklist and update statuses as you go.
 Delegate big self-contained chunks with run_subagent; several run_subagent calls in one reply run in parallel.
 Use schedule_task for anything recurring or "later". Unattended runs can only write/run what an "always allow" rule already covers.
+You have persistent memory across sessions: save durable facts (who the user is, their preferences, ongoing projects) with save_memory; check your memory index before asking things you should already know; read_memory for details, forget_memory for stale facts.
 Reads are instant; writes and commands ask for approval — that's normal, don't apologize for it.
 When you finish, summarize what changed in plain language."""
 
@@ -142,6 +144,9 @@ def _build_system_prompt(workdir: Path) -> str:
         prompt += "\n\nProject instructions (AGENTS.md):\n" + agents_md.read_text(
             errors="replace"
         )[:6000]
+    index = memory_store.load_index()
+    if index:
+        prompt += "\n\nYour memory index (one line per saved memory):\n" + index
     return prompt
 
 

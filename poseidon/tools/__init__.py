@@ -4,6 +4,7 @@ Each tool: OpenAI-format schema, async handler(args, ctx), and — if it needs
 approval — a subject() that extracts what the user is being asked to approve.
 ctx is {"workdir": Path}.
 """
+from .. import memory as memory_store
 from . import files, shell, web
 
 TOOLS = {}
@@ -101,6 +102,55 @@ _register(
         "required": ["url"],
     },
     web.web_fetch,
+)
+
+
+async def _save_memory(args, ctx):
+    return memory_store.save(args["title"], args["content"])
+
+
+async def _read_memory(args, ctx):
+    return memory_store.read(args["name"])
+
+
+async def _forget_memory(args, ctx):
+    return memory_store.forget(args["name"])
+
+
+_register(
+    "save_memory",
+    "Save a durable fact to persistent memory (survives across sessions). Use for lasting facts about the user, their projects, or their preferences — not session-only details. Overwrites if the title already exists.",
+    {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Short descriptive title"},
+            "content": {"type": "string", "description": "The fact, in a few sentences"},
+        },
+        "required": ["title", "content"],
+    },
+    _save_memory,
+)
+
+_register(
+    "read_memory",
+    "Read the full content of a memory listed in your memory index.",
+    {
+        "type": "object",
+        "properties": {"name": {"type": "string", "description": "Memory name/title from the index"}},
+        "required": ["name"],
+    },
+    _read_memory,
+)
+
+_register(
+    "forget_memory",
+    "Delete a memory that is wrong or no longer relevant.",
+    {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+    },
+    _forget_memory,
 )
 
 

@@ -33,6 +33,8 @@ And it's properly agentic, not just a chat with tools:
 - **Subagents** — big chunks get delegated to parallel subagents with their own context
 - **Schedules** — "check this every morning" becomes a real scheduled run (approval-gated;
   unattended runs can only do what an *Always allow* rule already covers)
+- **Memory** — durable facts persist across sessions as plain markdown in
+  `~/.poseidon/memory/`. Your agent's memory is your files: open it, edit it, delete it.
 
 ## Works with any model
 
@@ -52,9 +54,10 @@ convention as every other harness. No new file formats to learn.
 
 ## Status
 
-Early. v0.2: the core loop (chat, file tools, shell with approvals, web fetch,
-cost meter, activity stream) plus task planning, parallel subagents, and scheduled
-runs. See [PLAN.md](PLAN.md) for the roadmap (streaming, MCP, model failover, memory).
+Early. v0.3: the core loop (chat, file tools, shell with approvals, web fetch,
+cost meter, activity stream) plus task planning, parallel subagents, scheduled
+runs, and persistent file-based memory. See [PLAN.md](PLAN.md) for the roadmap
+(streaming, MCP, model failover, vector-memory A/B).
 
 ## Development
 
