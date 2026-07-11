@@ -5,26 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Poseidon</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔱</text></svg>" />
-  <link rel="stylesheet" href="/static/style.css?v=047" />
+  <link rel="stylesheet" href="/static/style.css?v=050" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
   <header>
-    <div class="brand">🔱 <strong>Poseidon</strong><span id="workdir" class="workdir"></span></div>
+    <div class="brand">🔱 <strong>Poseidon</strong>
+      <select id="project-select" class="chip-select" title="Project"></select>
+      <button id="new-project-btn" class="ghost mini" title="New project">＋</button>
+    </div>
     <div class="header-right">
-      <select id="skin-select" class="skin-select" title="Skin">
+      <select id="skin-select" class="chip-select" title="Skin">
         <option value="base">🌊 Poseidon</option>
         <option value="trek">🚀 Trek Wars</option>
         <option value="ukiyo">🌸 Ukiyo-e</option>
         <option value="wasteland">🏜 Wasteland</option>
       </select>
       <span id="cost" class="cost" title="Session cost (tokens in/out)">$0.0000</span>
+      <select id="member-select" class="chip-select member" title="Who are you?"></select>
       <button id="settings-btn" class="ghost" title="Settings">⚙</button>
     </div>
   </header>
 
   <main>
     <section id="chat-pane">
+      <div class="chat-toolbar">
+        <button id="sessions-btn" class="ghost mini">☰ Sessions</button>
+        <span id="session-title" class="session-title"></span>
+        <button id="new-session-btn" class="ghost mini" title="New session">＋ New</button>
+      </div>
+      <div id="session-drawer" class="drawer" hidden>
+        <div class="drawer-head">Sessions <button class="ghost mini" id="drawer-close">✕</button></div>
+        <div id="session-list"></div>
+      </div>
       <div id="messages"></div>
       <form id="chat-form" autocomplete="off">
         <textarea id="chat-input" rows="1" placeholder="Ask Poseidon to do something…"></textarea>
@@ -34,12 +47,19 @@
 
     <section id="workspace-pane">
       <nav class="tabs">
-        <button class="tab active" data-tab="activity">Activity</button>
+        <button class="tab active" data-tab="pipeline">Pipeline</button>
+        <button class="tab" data-tab="activity">Activity</button>
         <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="files">Files</button>
+        <button class="tab" data-tab="checkpoints">Checkpoints</button>
         <button class="tab" data-tab="schedules">Schedules</button>
+        <button class="tab" data-tab="memory">Memory</button>
+        <button class="tab" data-tab="team">Team</button>
       </nav>
-      <div id="tab-activity" class="tab-body active">
+      <div id="tab-pipeline" class="tab-body active">
+        <div id="pipeline-canvas" class="pipeline"><div class="feed-empty">Runs will appear here as a live diagram — chat turns, background tasks, schedules, and their subagents. Click a node to drill in.</div></div>
+      </div>
+      <div id="tab-activity" class="tab-body">
         <div id="activity-feed" class="feed"><div class="feed-empty">Tool calls will stream here — watch it work.</div></div>
       </div>
       <div id="tab-tasks" class="tab-body">
@@ -48,10 +68,25 @@
       <div id="tab-schedules" class="tab-body">
         <div id="schedule-list" class="schedule-list"><div class="feed-empty">No scheduled tasks yet — ask Poseidon to do something "every morning" or "in an hour".</div></div>
       </div>
+      <div id="tab-checkpoints" class="tab-body">
+        <div id="checkpoint-list" class="schedule-list"><div class="feed-empty">Checkpoints are saved automatically after real work (and on request). Review or rewind here.</div></div>
+      </div>
+      <div id="tab-memory" class="tab-body">
+        <div id="memory-list" class="schedule-list"><div class="feed-empty">Project memory — durable facts your team's agent has saved. Plain markdown on disk.</div></div>
+      </div>
+      <div id="tab-team" class="tab-body">
+        <div id="team-view" class="schedule-list"></div>
+      </div>
       <div id="tab-files" class="tab-body">
         <div id="file-breadcrumb" class="breadcrumb"></div>
         <div id="file-list" class="file-list"></div>
         <pre id="file-view" class="file-view" hidden></pre>
+      </div>
+      <div id="drill-overlay" class="drill" hidden>
+        <div class="drill-card">
+          <div class="drill-head"><span id="drill-title"></span><button class="ghost mini" id="drill-close">✕</button></div>
+          <div id="drill-body"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -62,23 +97,25 @@
   </footer>
 
   <dialog id="settings-modal">
-    <h2>Provider</h2>
+    <h2>Settings</h2>
+    <h3>Provider</h3>
     <p class="muted">Any OpenAI-compatible endpoint works. Keys never leave this machine.</p>
-    <label>Preset
-      <select id="preset-select"></select>
-    </label>
-    <label>Base URL
-      <input id="cfg-base-url" placeholder="https://api.openai.com/v1" />
-    </label>
-    <label>API key
-      <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" />
-    </label>
-    <label>Model
-      <input id="cfg-model" placeholder="gpt-4o-mini" />
-    </label>
+    <label>Preset <select id="preset-select"></select></label>
+    <label>Base URL <input id="cfg-base-url" placeholder="https://api.openai.com/v1" /></label>
+    <label>API key <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" /></label>
+    <label>Model <input id="cfg-model" placeholder="gpt-4o-mini" /></label>
+    <h3>Engine</h3>
+    <div class="settings-grid">
+      <label>Compact context above (tokens) <input id="eng-compact" type="number" min="4000" max="200000" step="1000" /></label>
+      <label>Keep recent messages <input id="eng-keep" type="number" min="2" max="40" /></label>
+      <label>Max steps per turn <input id="eng-iter" type="number" min="5" max="60" /></label>
+      <label class="check"><input id="eng-ckpt" type="checkbox" /> Auto-checkpoint after real work</label>
+    </div>
+    <h3>Always-allow rules</h3>
+    <div id="rules-list" class="rules-list"><span class="muted">None yet — approve something with "Always allow".</span></div>
     <div class="modal-actions">
       <button id="cfg-save">Save</button>
-      <button class="ghost" id="cfg-cancel">Cancel</button>
+      <button class="ghost" id="cfg-cancel">Close</button>
     </div>
   </dialog>
 
@@ -91,11 +128,9 @@
        <a href="https://getbonito.com" target="_blank" rel="noopener">Bonito</a>,
        an AI gateway for teams: one key for every provider, failover, cost tracking,
        and governance.</p>
-    <div class="modal-actions">
-      <button class="ghost" id="about-close">Close</button>
-    </div>
+    <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=047"></script>
+  <script src="/static/app.js?v=050"></script>
 </body>
 </html>

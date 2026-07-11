@@ -1,74 +1,201 @@
 /* Poseidon UI — vanilla JS, no build step. */
 const $ = (id) => document.getElementById(id);
-const state = { sessionId: null, busy: false, presets: {}, thinkingEl: null };
+const state = {
+  projectId: null, memberId: null, sessionId: null, busy: false,
+  presets: {}, engine: {}, rules: [], projects: [], members: [],
+  thinkingEl: null, es: null, currentPath: ".", pipeTimer: null, sessionOwner: null,
+};
+
+const fmtTime = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+const esc = (s) => { const d = document.createElement("span"); d.textContent = s ?? ""; return d.innerHTML; };
 
 /* ---------- boot ---------- */
 async function init() {
   const s = await fetch("/api/state").then((r) => r.json());
-  state.presets = s.presets;
-  $("workdir").textContent = s.workdir;
+  Object.assign(state, { presets: s.presets, engine: s.engine, rules: s.approval_rules,
+    projects: s.projects, members: s.members });
+  $("workdir")?.remove();
+  fillProjectSelect();
+  fillMemberSelect();
   fillPresets(s);
-  if (!s.configured) openSettings(s);
-  const sess = await fetch("/api/sessions", { method: "POST" }).then((r) => r.json());
-  state.sessionId = sess.session_id;
-  openEvents();
+  fillEngine();
+  fillRules();
+  if (!s.configured) openSettings();
+  await newSession();
   loadFiles(".");
+  refreshPipeline();
   $("chat-input").focus();
 }
 
+function fillProjectSelect() {
+  const sel = $("project-select");
+  sel.innerHTML = "";
+  for (const p of state.projects) {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.name;
+    sel.appendChild(o);
+  }
+  const saved = localStorage.getItem("poseidon-project");
+  state.projectId = state.projects.find((p) => p.id === saved) ? saved : state.projects[0]?.id;
+  sel.value = state.projectId;
+  sel.onchange = async () => {
+    state.projectId = sel.value;
+    localStorage.setItem("poseidon-project", sel.value);
+    await newSession();
+    loadFiles(".");
+    refreshPipeline();
+    refreshPaneData();
+  };
+}
+
+function fillMemberSelect() {
+  const sel = $("member-select");
+  sel.innerHTML = "";
+  for (const m of state.members) {
+    const o = document.createElement("option");
+    o.value = m.id;
+    o.textContent = `👤 ${m.name}`;
+    sel.appendChild(o);
+  }
+  const extra = document.createElement("option");
+  extra.value = "__new";
+  extra.textContent = "＋ add teammate…";
+  sel.appendChild(extra);
+  const saved = localStorage.getItem("poseidon-member");
+  state.memberId = state.members.find((m) => m.id === saved) ? saved : state.members[0]?.id;
+  sel.value = state.memberId;
+  sel.onchange = async () => {
+    if (sel.value === "__new") {
+      const name = prompt("Teammate name:");
+      sel.value = state.memberId;
+      if (!name) return;
+      const r = await fetch("/api/members", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, color: randColor() }) });
+      if (!r.ok) return alert("Could not add (name taken?)");
+      const m = await r.json();
+      state.members.push(m);
+      fillMemberSelect();
+      sel.value = m.id;
+      state.memberId = m.id;
+      localStorage.setItem("poseidon-member", m.id);
+      return;
+    }
+    state.memberId = sel.value;
+    localStorage.setItem("poseidon-member", sel.value);
+  };
+}
+
+const randColor = () => `hsl(${Math.floor(Math.random() * 360)},55%,45%)`;
+
+$("new-project-btn").onclick = async () => {
+  const name = prompt("Project name:");
+  if (!name) return;
+  const wd = prompt("Folder for this project (blank = server default):") || "";
+  const r = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, workdir: wd, member_id: state.memberId }) });
+  if (!r.ok) return alert((await r.json()).detail || "failed");
+  const p = await r.json();
+  state.projects.push({ ...p, members: [] });
+  fillProjectSelect();
+  $("project-select").value = p.id;
+  $("project-select").onchange();
+};
+
+/* ---------- sessions ---------- */
+async function newSession() {
+  const r = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: state.projectId, member_id: state.memberId }) });
+  const { session_id } = await r.json();
+  state.sessionId = session_id;
+  state.sessionOwner = state.memberId;
+  $("messages").innerHTML = "";
+  $("session-title").textContent = "new session";
+  clearActivityAndTasks();
+  openEvents();
+}
+
+async function openSession(sid) {
+  const s = await fetch(`/api/sessions/${sid}`).then((r) => (r.ok ? r.json() : null));
+  if (!s) return;
+  state.sessionId = sid;
+  state.sessionOwner = s.member_id;
+  $("messages").innerHTML = "";
+  clearActivityAndTasks();
+  for (const m of s.messages) addMsg(m.role === "user" ? "user" : "assistant", m.content);
+  $("session-title").textContent = s.title || "untitled";
+  if (s.progress) addProgressChip(s.progress);
+  updateCost({ cost: s.cost, tokens_in: s.tokens_in, tokens_out: s.tokens_out, priced: !!s.priced });
+  openEvents();
+  $("session-drawer").hidden = true;
+}
+
+function clearActivityAndTasks() {
+  $("activity-feed").innerHTML = '<div class="feed-empty">Tool calls will stream here — watch it work.</div>';
+  $("task-list").innerHTML = '<div class="feed-empty">When Poseidon plans multi-step work, its checklist appears here.</div>';
+}
+
+$("new-session-btn").onclick = () => newSession();
+$("sessions-btn").onclick = async () => {
+  const drawer = $("session-drawer");
+  if (!drawer.hidden) { drawer.hidden = true; return; }
+  const { sessions } = await fetch(`/api/sessions?project_id=${state.projectId}`).then((r) => r.json());
+  const list = $("session-list");
+  list.innerHTML = sessions.length ? "" : '<div class="feed-empty">No sessions yet.</div>';
+  for (const s of sessions) {
+    const row = document.createElement("div");
+    row.className = "session-row" + (s.id === state.sessionId ? " current" : "");
+    row.innerHTML = `<span class="dot" style="background:${esc(s.member_color || "#888")}"></span>
+      <div class="session-info"><div class="t">${esc(s.title || "untitled")}</div>
+      <div class="p">${esc(s.progress || "")}</div>
+      <div class="m">${esc(s.member_name || "?")} · ${fmtTime(s.updated)}</div></div>`;
+    row.onclick = () => openSession(s.id);
+    list.appendChild(row);
+  }
+  drawer.hidden = false;
+};
+$("drawer-close").onclick = () => ($("session-drawer").hidden = true);
+
 /* ---------- events (SSE) ---------- */
 function openEvents() {
-  const es = new EventSource(`/api/events?session_id=${state.sessionId}`);
-  es.onmessage = (e) => handleEvent(JSON.parse(e.data));
-  es.onerror = () => {}; // EventSource auto-reconnects
+  if (state.es) state.es.close();
+  state.es = new EventSource(`/api/events?session_id=${state.sessionId}&project_id=${state.projectId}`);
+  state.es.onmessage = (e) => handleEvent(JSON.parse(e.data));
 }
 
 function handleEvent(ev) {
+  if (["run_started", "run_finished"].includes(ev.type)) schedulePipeline();
+  const mine = ev.session_id === state.sessionId;
   switch (ev.type) {
-    case "turn_started":
-      setThinking(true);
-      break;
+    case "turn_started": if (mine) setThinking(true); break;
     case "assistant_message":
-      setThinking(false);
-      addMsg("assistant", ev.content);
-      setThinking(state.busy);
+      if (!mine) break;
+      setThinking(false); addMsg("assistant", ev.content); setThinking(state.busy);
       break;
     case "tool_call":
       setThinking(false);
-      if (!ev.agent) addToolChip(ev);
+      if (mine && !ev.agent) addToolChip(ev);
       logActivity(`→ ${agentLabel(ev)}${ev.name}`, describeArgs(ev), ev.agent ? "sub" : "");
-      setThinking(true);
+      if (mine) setThinking(true);
       break;
     case "tool_result":
       logActivity(`← ${agentLabel(ev)}${ev.name}`, ev.summary, ev.ok ? "ok" : "err");
-      if (!ev.ok && !ev.agent) addToolChip({ name: ev.name, error: ev.summary });
+      if (mine && !ev.ok && !ev.agent) addToolChip({ name: ev.name, error: ev.summary });
       break;
     case "subagent_started":
-      addToolChip({ name: `subagent ${ev.agent}`, args: { task: ev.task } });
+      if (mine) addToolChip({ name: `subagent ${ev.agent}`, args: { task: ev.task } });
       logActivity(`⑂ ${ev.agent} started`, ev.task, "sub");
       break;
-    case "subagent_complete":
-      logActivity(`⑂ ${ev.agent} done`, ev.result, "ok");
-      break;
-    case "tasks_update":
-      renderTasks(ev.tasks);
-      break;
-    case "approval_required":
-      setThinking(false);
-      renderApproval(ev);
-      break;
-    case "cost_update":
-      updateCost(ev);
-      break;
-    case "error":
-      setThinking(false);
-      addMsg("error", ev.message);
-      break;
+    case "subagent_complete": logActivity(`⑂ ${ev.agent} done`, ev.result, "ok"); break;
+    case "tasks_update": if (mine) renderTasks(ev.tasks); break;
+    case "approval_required": if (mine) { setThinking(false); renderApproval(ev); } break;
+    case "cost_update": if (mine) updateCost(ev); break;
+    case "checkpoint_saved": if (mine) addChip(`📍 checkpoint saved${ev.auto ? " (auto)" : ""}`); break;
+    case "progress_update": if (mine) addProgressChip(ev.note); break;
+    case "compacted": if (mine) addChip(`🗜 context compacted (${ev.dropped} messages summarized)`); break;
+    case "error": if (mine) { setThinking(false); addMsg("error", ev.message); } break;
     case "turn_complete":
-      state.busy = false;
-      setThinking(false);
+      if (!mine) break;
+      state.busy = false; setThinking(false);
       $("send-btn").disabled = false;
-      loadFiles(currentPath); // refresh files pane after work
+      loadFiles(state.currentPath);
       break;
   }
 }
@@ -84,24 +211,19 @@ $("chat-form").addEventListener("submit", async (e) => {
   input.style.height = "auto";
   state.busy = true;
   $("send-btn").disabled = true;
-  const r = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: state.sessionId, message: text }),
-  });
+  const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: state.sessionId, message: text, member_id: state.memberId }) });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
     addMsg("error", err.detail || `request failed (${r.status})`);
     state.busy = false;
     $("send-btn").disabled = false;
   }
+  if ($("session-title").textContent === "new session") $("session-title").textContent = text.slice(0, 60);
 });
 
 $("chat-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    $("chat-form").requestSubmit();
-  }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("chat-form").requestSubmit(); }
 });
 $("chat-input").addEventListener("input", (e) => {
   e.target.style.height = "auto";
@@ -116,12 +238,22 @@ function addMsg(kind, text) {
   scrollChat();
 }
 
+function addChip(text) {
+  const div = document.createElement("div");
+  div.className = "sys-chip";
+  div.textContent = text;
+  $("messages").appendChild(div);
+  scrollChat();
+}
+
+function addProgressChip(note) {
+  addChip(`🧭 progress: ${note}`);
+}
+
 function addToolChip(ev) {
   const div = document.createElement("div");
   div.className = "tool-chip";
-  div.textContent = ev.error
-    ? `⚠ ${ev.name}: ${ev.error}`
-    : `🔧 ${ev.name} ${describeArgs(ev)}`;
+  div.textContent = ev.error ? `⚠ ${ev.name}: ${ev.error}` : `🔧 ${ev.name} ${describeArgs(ev)}`;
   $("messages").appendChild(div);
   scrollChat();
 }
@@ -142,46 +274,26 @@ function setThinking(on) {
 
 function describeArgs(ev) {
   const a = ev.args || {};
-  return a.path || a.command || a.url || a.task || a.prompt || "";
+  return a.path || a.command || a.url || a.task || a.prompt || a.label || a.note || "";
 }
-
-function agentLabel(ev) {
-  return ev.agent ? `[${ev.agent}] ` : "";
-}
-
-function scrollChat() {
-  $("messages").scrollTop = $("messages").scrollHeight;
-}
+const agentLabel = (ev) => (ev.agent ? `[${ev.agent}] ` : "");
+const scrollChat = () => { $("messages").scrollTop = $("messages").scrollHeight; };
 
 /* ---------- approvals ---------- */
 function renderApproval(ev) {
   const card = document.createElement("div");
   card.className = "approval";
-  const title = {
-    write_file: "wants to write",
-    edit_file: "wants to edit",
-    run_command: "wants to run",
-    schedule_task: "wants to schedule",
-  }[ev.tool] || `wants: ${ev.tool}`;
-  card.innerHTML = `
-    <h4>Poseidon ${title} <code></code></h4>
-    <pre></pre>
-    <div class="actions">
-      <button class="ok-btn">Approve</button>
-      <button class="ghost always-btn">Always allow</button>
-      <button class="deny deny-btn">Deny</button>
-    </div>`;
+  const title = { write_file: "wants to write", edit_file: "wants to edit", run_command: "wants to run", schedule_task: "wants to schedule" }[ev.tool] || `wants: ${ev.tool}`;
+  card.innerHTML = `<h4>Poseidon ${title} <code></code></h4><pre></pre>
+    <div class="actions"><button class="ok-btn">Approve</button>
+    <button class="ghost always-btn">Always allow</button>
+    <button class="deny deny-btn">Deny</button></div>`;
   card.querySelector("code").textContent = ev.subject;
   card.querySelector("pre").textContent = ev.detail || ev.subject;
   const resolve = async (approved, always) => {
-    await fetch(`/api/approvals/${ev.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approved, always }),
-    });
+    await fetch(`/api/approvals/${ev.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approved, always }) });
     card.classList.add("resolved");
-    card.querySelector(".actions").innerHTML =
-      `<span class="verdict">${approved ? (always ? "✓ approved — always allow saved" : "✓ approved") : "✗ denied"}</span>`;
+    card.querySelector(".actions").innerHTML = `<span class="verdict">${approved ? (always ? "✓ approved — always allow saved" : "✓ approved") : "✗ denied"}</span>`;
     setThinking(true);
   };
   card.querySelector(".ok-btn").onclick = () => resolve(true, false);
@@ -191,72 +303,132 @@ function renderApproval(ev) {
   scrollChat();
 }
 
-/* ---------- workspace: activity ---------- */
+/* ---------- pipeline ---------- */
+function schedulePipeline() {
+  clearTimeout(state.pipeTimer);
+  state.pipeTimer = setTimeout(refreshPipeline, 400);
+}
+
+const KIND_ICON = { chat: "💬", background: "🌀", scheduled: "⏰", subagent: "⑂" };
+
+async function refreshPipeline() {
+  const [runsR, schedR] = await Promise.all([
+    fetch(`/api/runs?project_id=${state.projectId}`).then((r) => r.json()),
+    fetch(`/api/schedules?project_id=${state.projectId}`).then((r) => r.json()),
+  ]);
+  const runs = runsR.runs || [];
+  const canvas = $("pipeline-canvas");
+  canvas.innerHTML = "";
+  if (schedR.schedules?.length) {
+    const src = document.createElement("div");
+    src.className = "pipe-sources";
+    for (const s of schedR.schedules) {
+      const n = document.createElement("div");
+      n.className = "pnode source";
+      n.innerHTML = `<span class="ico">⏰</span><div class="lbl">${esc(s.prompt.slice(0, 60))}</div>
+        <div class="sub">next ${esc(s.next_run || "—")}</div>`;
+      src.appendChild(n);
+    }
+    canvas.appendChild(src);
+  }
+  const tops = runs.filter((r) => !r.parent_run_id).slice(0, 10);
+  const children = (id) => runs.filter((r) => r.parent_run_id === id);
+  if (!tops.length && !schedR.schedules?.length) {
+    canvas.innerHTML = '<div class="feed-empty">Runs will appear here as a live diagram — chat turns, background tasks, schedules, and their subagents. Click a node to drill in.</div>';
+    return;
+  }
+  for (const run of tops) {
+    canvas.appendChild(runNode(run, children));
+  }
+}
+
+function runNode(run, children) {
+  const wrap = document.createElement("div");
+  wrap.className = "pipe-branch";
+  const n = document.createElement("div");
+  n.className = `pnode ${run.status}`;
+  const dur = run.finished ? `${Math.max(1, Math.round(run.finished - run.started))}s` : "running…";
+  n.innerHTML = `<span class="ico">${KIND_ICON[run.kind] || "•"}</span>
+    <div class="lbl">${esc(run.label || run.kind)}</div>
+    <div class="sub">${esc(run.kind)} · ${dur}${run.cost ? ` · $${run.cost.toFixed(4)}` : ""}</div>
+    <span class="status-dot"></span>`;
+  n.onclick = () => drillRun(run.id);
+  wrap.appendChild(n);
+  const kids = children(run.id);
+  if (kids.length) {
+    const box = document.createElement("div");
+    box.className = "pipe-children";
+    for (const k of kids) box.appendChild(runNode(k, children));
+    wrap.appendChild(box);
+  }
+  return wrap;
+}
+
+async function drillRun(rid) {
+  const run = await fetch(`/api/runs/${rid}`).then((r) => (r.ok ? r.json() : null));
+  if (!run) return;
+  $("drill-title").textContent = `${KIND_ICON[run.kind] || ""} ${run.label || run.kind}`;
+  const evs = (run.events || []).map((e) => {
+    const p = e.payload || {};
+    const detail = p.content || p.summary || p.task || p.note || p.message ||
+      (p.args ? (p.args.path || p.args.command || p.args.url || p.args.task || "") : "") || "";
+    return `<div class="ev-row"><span class="t">${new Date(e.ts * 1000).toLocaleTimeString()}</span>
+      <span class="k">${esc(e.type)}</span><span class="d">${esc(String(detail).slice(0, 160))}</span></div>`;
+  }).join("");
+  $("drill-body").innerHTML = `
+    <div class="drill-meta">status <b>${esc(run.status)}</b> · started ${fmtTime(run.started)}
+      ${run.finished ? "· finished " + fmtTime(run.finished) : ""} · $${(run.cost || 0).toFixed(4)}</div>
+    ${run.result ? `<pre class="drill-result">${esc(run.result)}</pre>` : ""}
+    <div class="ev-list">${evs || '<span class="muted">no events recorded</span>'}</div>`;
+  $("drill-overlay").hidden = false;
+}
+$("drill-close").onclick = () => ($("drill-overlay").hidden = true);
+
+/* ---------- workspace: tasks ---------- */
+function renderTasks(tasks) {
+  const list = $("task-list");
+  list.innerHTML = "";
+  if (!tasks.length) { list.innerHTML = '<div class="feed-empty">No tasks right now.</div>'; return; }
+  const dots = { pending: "○", in_progress: "◉", done: "✓" };
+  for (const t of tasks) {
+    const row = document.createElement("div");
+    row.className = `task-row ${t.status}`;
+    row.innerHTML = `<span class="dot-ch"></span><span class="title"></span>`;
+    row.querySelector(".dot-ch").textContent = dots[t.status] || "○";
+    row.querySelector(".title").textContent = t.title;
+    list.appendChild(row);
+  }
+}
+
+/* ---------- activity ---------- */
 function logActivity(label, detail, cls) {
   const feed = $("activity-feed");
   feed.querySelector(".feed-empty")?.remove();
   const row = document.createElement("div");
   row.className = "feed-item";
-  const t = new Date().toLocaleTimeString();
   row.innerHTML = `<span class="t"></span><span class="${cls}"></span><span></span>`;
-  row.children[0].textContent = t;
+  row.children[0].textContent = new Date().toLocaleTimeString();
   row.children[1].textContent = label;
   row.children[2].textContent = detail || "";
   feed.appendChild(row);
   feed.parentElement.scrollTop = feed.parentElement.scrollHeight;
 }
 
-/* ---------- workspace: tasks ---------- */
-function renderTasks(tasks) {
-  const list = $("task-list");
-  list.innerHTML = "";
-  if (!tasks.length) {
-    list.innerHTML = '<div class="feed-empty">No tasks right now.</div>';
-    return;
-  }
-  const dots = { pending: "○", in_progress: "◉", done: "✓" };
-  for (const t of tasks) {
-    const row = document.createElement("div");
-    row.className = `task-row ${t.status}`;
-    const dot = document.createElement("span");
-    dot.className = "dot";
-    dot.textContent = dots[t.status] || "○";
-    const title = document.createElement("span");
-    title.className = "title";
-    title.textContent = t.title;
-    row.append(dot, title);
-    list.appendChild(row);
-  }
-}
-
-/* ---------- workspace: schedules ---------- */
+/* ---------- schedules ---------- */
 async function loadSchedules() {
-  const r = await fetch("/api/schedules");
-  if (!r.ok) return;
-  const { schedules } = await r.json();
+  const { schedules } = await fetch(`/api/schedules?project_id=${state.projectId}`).then((r) => r.json());
   const list = $("schedule-list");
-  list.innerHTML = "";
-  if (!schedules.length) {
-    list.innerHTML =
-      '<div class="feed-empty">No scheduled tasks yet — ask Poseidon to do something "every morning" or "in an hour".</div>';
-    return;
-  }
+  list.innerHTML = schedules.length ? "" : '<div class="feed-empty">No scheduled tasks yet — ask Poseidon to do something "every morning" or "in an hour".</div>';
   for (const s of schedules) {
     const card = document.createElement("div");
     card.className = "schedule-card";
-    const when =
-      s.kind === "every" ? `every ${parseFloat(s.value)} min`
-      : s.kind === "daily" ? `daily at ${s.value}`
-      : `once at ${s.value}`;
-    card.innerHTML = `
-      <button class="ghost cancel">Cancel</button>
+    const when = s.kind === "every" ? `every ${parseFloat(s.value)} min` : s.kind === "daily" ? `daily at ${s.value}` : `once at ${s.value}`;
+    card.innerHTML = `<button class="ghost cancel">Cancel</button>
       <span class="when"></span> — <span class="prompt"></span>
-      <div class="meta"></div>
-      <div class="last" hidden></div>`;
+      <div class="meta"></div><div class="last" hidden></div>`;
     card.querySelector(".when").textContent = when;
     card.querySelector(".prompt").textContent = s.prompt;
-    card.querySelector(".meta").textContent =
-      `next: ${s.next_run || "—"}${s.last_run ? ` · last: ${s.last_run}` : ""}`;
+    card.querySelector(".meta").textContent = `next: ${s.next_run || "—"}${s.last_run ? ` · last: ${s.last_run}` : ""}`;
     if (s.last_result) {
       const last = card.querySelector(".last");
       last.hidden = false;
@@ -270,13 +442,82 @@ async function loadSchedules() {
   }
 }
 
-/* ---------- workspace: files ---------- */
-let currentPath = ".";
+/* ---------- checkpoints ---------- */
+async function loadCheckpoints() {
+  const { checkpoints } = await fetch(`/api/checkpoints?project_id=${state.projectId}`).then((r) => r.json());
+  const list = $("checkpoint-list");
+  list.innerHTML = checkpoints.length ? "" : '<div class="feed-empty">Checkpoints are saved automatically after real work (and on request). Review or rewind here.</div>';
+  for (const c of checkpoints) {
+    const card = document.createElement("div");
+    card.className = "schedule-card";
+    card.innerHTML = `<div class="row-actions">
+        <button class="ghost mini view">View</button>
+        <button class="ghost mini restore">Rewind</button></div>
+      <span class="when">📍 ${esc(c.label)}</span>${c.auto ? ' <span class="badge">auto</span>' : ""}
+      <div class="meta">${esc(c.session_title || "session")} · ${esc(c.member_name || "?")} · ${fmtTime(c.ts)}</div>
+      ${c.progress ? `<div class="last">${esc(c.progress)}</div>` : ""}`;
+    card.querySelector(".view").onclick = async () => {
+      const d = await fetch(`/api/checkpoints/${c.id}`).then((r) => r.json());
+      $("drill-title").textContent = `📍 ${d.label}`;
+      const files = Object.entries(d.files || {}).map(([p, content]) =>
+        `<div class="ev-row"><span class="k">file</span><span class="d">${esc(p)}</span></div><pre class="drill-result">${esc(content.slice(0, 1500))}</pre>`).join("");
+      $("drill-body").innerHTML = `<div class="drill-meta">${fmtTime(d.ts)} · ${d.message_count} messages${d.progress ? " · " + esc(d.progress) : ""}</div>
+        ${files || '<span class="muted">no files captured</span>'}`;
+      $("drill-overlay").hidden = false;
+    };
+    card.querySelector(".restore").onclick = async () => {
+      if (!confirm(`Rewind session to "${c.label}"? The conversation returns to that point.`)) return;
+      const r = await fetch(`/api/checkpoints/${c.id}/restore`, { method: "POST" });
+      if (r.ok && c.session_id === state.sessionId) openSession(state.sessionId);
+    };
+    list.appendChild(card);
+  }
+}
+
+/* ---------- memory ---------- */
+async function loadMemory() {
+  const { entries } = await fetch(`/api/memory?project_id=${state.projectId}`).then((r) => r.json());
+  const list = $("memory-list");
+  list.innerHTML = entries.length ? "" : '<div class="feed-empty">Project memory — durable facts your team\'s agent has saved. Plain markdown on disk.</div>';
+  for (const e of entries) {
+    const card = document.createElement("div");
+    card.className = "schedule-card";
+    card.innerHTML = `<span class="when">🧠 ${esc(e.title)}</span><div class="last">${esc(e.preview.split("\n").slice(2).join(" ").slice(0, 220))}</div>`;
+    list.appendChild(card);
+  }
+}
+
+/* ---------- team ---------- */
+async function loadTeam() {
+  const status = await fetch(`/api/projects/${state.projectId}/status`).then((r) => r.json());
+  const proj = state.projects.find((p) => p.id === state.projectId) || { members: [] };
+  const view = $("team-view");
+  view.innerHTML = "";
+  for (const m of state.members) {
+    const sessions = status.sessions.filter((s) => s.member_id === m.id);
+    const latest = sessions[0];
+    const card = document.createElement("div");
+    card.className = "schedule-card team-card";
+    card.innerHTML = `<span class="avatar" style="background:${esc(m.color || "#888")}">${esc((m.name || "?")[0].toUpperCase())}</span>
+      <b>${esc(m.name)}</b>
+      <div class="meta">${latest ? `${esc(latest.title || "untitled")} — ${esc(latest.progress || "no note")} · ${fmtTime(latest.updated)}` : "no activity yet"}</div>`;
+    view.appendChild(card);
+  }
+  const active = status.active_runs || [];
+  if (active.length) {
+    const card = document.createElement("div");
+    card.className = "schedule-card";
+    card.innerHTML = `<span class="when">🌀 running now</span><div class="meta">${active.map((r) => esc(`${r.kind}: ${r.label}`)).join("<br>")}</div>`;
+    view.appendChild(card);
+  }
+}
+
+/* ---------- files ---------- */
 async function loadFiles(path) {
-  const r = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
+  const r = await fetch(`/api/files?path=${encodeURIComponent(path)}&project_id=${state.projectId}`);
   if (!r.ok) return;
   const data = await r.json();
-  currentPath = data.path;
+  state.currentPath = data.path;
   $("file-view").hidden = true;
   renderBreadcrumb(data.path);
   const list = $("file-list");
@@ -300,7 +541,7 @@ function renderBreadcrumb(path) {
   const bc = $("file-breadcrumb");
   bc.innerHTML = "";
   const root = document.createElement("a");
-  root.textContent = "workdir";
+  root.textContent = "project";
   root.onclick = () => loadFiles(".");
   bc.appendChild(root);
   if (path !== ".") {
@@ -318,7 +559,7 @@ function renderBreadcrumb(path) {
 }
 
 async function viewFile(path) {
-  const r = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+  const r = await fetch(`/api/file?path=${encodeURIComponent(path)}&project_id=${state.projectId}`);
   if (!r.ok) return;
   const data = await r.json();
   const view = $("file-view");
@@ -333,27 +574,31 @@ function fmtSize(n) {
   return `${(n / 1048576).toFixed(1)} MB`;
 }
 
-/* ---------- cost meter ---------- */
+/* ---------- cost ---------- */
 function updateCost(ev) {
   const el = $("cost");
-  el.textContent = `$${ev.cost.toFixed(4)}`;
-  el.title = `Session cost — ${ev.tokens_in.toLocaleString()} in / ${ev.tokens_out.toLocaleString()} out${ev.priced ? "" : " (model unpriced, cost incomplete)"}`;
+  el.textContent = `$${(ev.cost || 0).toFixed(4)}`;
+  el.title = `Session cost — ${(ev.tokens_in || 0).toLocaleString()} in / ${(ev.tokens_out || 0).toLocaleString()} out${ev.priced ? "" : " (model unpriced, cost incomplete)"}`;
   el.classList.toggle("unpriced", !ev.priced);
 }
 
 /* ---------- tabs ---------- */
+const PANE_LOADERS = { pipeline: refreshPipeline, schedules: loadSchedules, checkpoints: loadCheckpoints, memory: loadMemory, team: loadTeam, files: () => loadFiles(state.currentPath) };
 for (const tab of document.querySelectorAll(".tab")) {
   tab.onclick = () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     document.querySelectorAll(".tab-body").forEach((b) => b.classList.remove("active"));
     tab.classList.add("active");
     $(`tab-${tab.dataset.tab}`).classList.add("active");
-    if (tab.dataset.tab === "files") loadFiles(currentPath);
-    if (tab.dataset.tab === "schedules") loadSchedules();
+    PANE_LOADERS[tab.dataset.tab]?.();
   };
 }
+function refreshPaneData() {
+  const active = document.querySelector(".tab.active")?.dataset.tab;
+  PANE_LOADERS[active]?.();
+}
 
-/* ---------- settings & about ---------- */
+/* ---------- settings ---------- */
 function fillPresets(s) {
   const sel = $("preset-select");
   sel.innerHTML = "";
@@ -378,31 +623,47 @@ function fillPresets(s) {
   }
 }
 
-function openSettings() {
-  $("settings-modal").showModal();
+function fillEngine() {
+  $("eng-compact").value = state.engine.compact_tokens;
+  $("eng-keep").value = state.engine.keep_recent;
+  $("eng-iter").value = state.engine.max_iterations;
+  $("eng-ckpt").checked = !!state.engine.auto_checkpoint;
 }
+
+function fillRules() {
+  const box = $("rules-list");
+  box.innerHTML = state.rules.length ? "" : '<span class="muted">None yet — approve something with "Always allow".</span>';
+  state.rules.forEach((r, i) => {
+    const row = document.createElement("div");
+    row.className = "rule-row";
+    row.innerHTML = `<code>${esc(r.tool)}: ${esc(r.pattern)}</code><button class="ghost mini">✕</button>`;
+    row.querySelector("button").onclick = async () => {
+      const resp = await fetch(`/api/settings/rules/${i}`, { method: "DELETE" });
+      if (resp.ok) { state.rules = (await resp.json()).rules; fillRules(); }
+    };
+    box.appendChild(row);
+  });
+}
+
+function openSettings() { $("settings-modal").showModal(); }
 $("settings-btn").onclick = openSettings;
 $("cfg-cancel").onclick = () => $("settings-modal").close();
 $("cfg-save").onclick = async (e) => {
   e.preventDefault();
-  const body = {
-    base_url: $("cfg-base-url").value,
-    api_key: $("cfg-api-key").value,
-    model: $("cfg-model").value,
-  };
-  const r = await fetch("/api/config", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (r.ok) $("settings-modal").close();
-  else alert("Base URL and model are required.");
+  const base_url = $("cfg-base-url").value.trim();
+  const model = $("cfg-model").value.trim();
+  if (base_url && model) {
+    await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url, api_key: $("cfg-api-key").value, model }) });
+  }
+  const r = await fetch("/api/settings/engine", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ compact_tokens: +$("eng-compact").value, keep_recent: +$("eng-keep").value,
+      max_iterations: +$("eng-iter").value, auto_checkpoint: $("eng-ckpt").checked }) });
+  if (r.ok) state.engine = (await r.json()).engine;
+  $("settings-modal").close();
 };
 
-$("about-link").onclick = (e) => {
-  e.preventDefault();
-  $("about-modal").showModal();
-};
+$("about-link").onclick = (e) => { e.preventDefault(); $("about-modal").showModal(); };
 $("about-close").onclick = () => $("about-modal").close();
 
 /* ================= skins ================= */
