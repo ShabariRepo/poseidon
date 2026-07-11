@@ -24,9 +24,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 ALLOWED_HOSTS = ("127.0.0.1", "localhost")
 
 
-def create_app(workdir: Path) -> FastAPI:
+def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
     app = FastAPI(title="Poseidon", version=__version__)
     store = Store(CONFIG_DIR / "sessions.db", workdir)
+    app.state.store = store
     runmgr = RunManager(store)
     broker = ApprovalBroker()
     busy: set[str] = set()
@@ -54,11 +55,17 @@ def create_app(workdir: Path) -> FastAPI:
         runmgr.spawn(scheduler.loop())
 
     @app.middleware("http")
-    async def localhost_only(request: Request, call_next):
+    async def access_guard(request: Request, call_next):
         host = (request.headers.get("host") or "").split(":")[0]
-        if host not in ALLOWED_HOSTS:
-            return JSONResponse({"detail": "forbidden"}, status_code=403)
-        return await call_next(request)
+        if host in ALLOWED_HOSTS:
+            return await call_next(request)
+        if allow_remote:
+            token = (request.headers.get("x-poseidon-token")
+                     or request.query_params.get("token") or "")
+            if store.valid_token(token):
+                return await call_next(request)
+            return JSONResponse({"detail": "member token required"}, status_code=401)
+        return JSONResponse({"detail": "forbidden"}, status_code=403)
 
     @app.get("/")
     async def index():
@@ -80,6 +87,12 @@ def create_app(workdir: Path) -> FastAPI:
             "presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in PRESETS.items()},
             "approval_rules": cfg.get("approvals", {}).get("rules", []),
             "engine": engine_settings(),
+            "integrations": {
+                "gmail": {"email": (cfg.get("integrations", {}).get("gmail", {}) or {}).get("email", ""),
+                          "configured": bool((cfg.get("integrations", {}).get("gmail", {}) or {}).get("app_password"))},
+                "slack": {"default_channel": (cfg.get("integrations", {}).get("slack", {}) or {}).get("default_channel", ""),
+                          "configured": bool((cfg.get("integrations", {}).get("slack", {}) or {}).get("bot_token"))},
+            },
             "projects": store.list_projects(),
             "members": store.list_members(),
             "total_cost": store.total_cost(),
@@ -108,6 +121,22 @@ def create_app(workdir: Path) -> FastAPI:
             eng["auto_checkpoint"] = bool(body["auto_checkpoint"])
         save_config(cfg)
         return {"ok": True, "engine": engine_settings()}
+
+    @app.post("/api/settings/integrations")
+    async def set_integrations(body: dict):
+        cfg = load_config()
+        integ = cfg.setdefault("integrations", {})
+        for svc, fields in (("gmail", ("email", "app_password")), ("slack", ("bot_token", "default_channel"))):
+            if svc in body:
+                cur = integ.setdefault(svc, {})
+                for f in fields:
+                    if f in body[svc]:
+                        cur[f] = str(body[svc][f]).strip()
+        save_config(cfg)
+        integ = cfg["integrations"]
+        return {"ok": True,
+                "gmail_configured": bool(integ["gmail"].get("email") and integ["gmail"].get("app_password")),
+                "slack_configured": bool(integ["slack"].get("bot_token"))}
 
     @app.delete("/api/settings/rules/{idx}")
     async def delete_rule(idx: int):
@@ -290,6 +319,10 @@ def create_app(workdir: Path) -> FastAPI:
     @app.get("/api/memory")
     async def get_memory(project_id: str = "default"):
         return {"entries": memory_store.list_entries(project_id)}
+
+    @app.get("/api/memory/graph")
+    async def get_memory_graph(project_id: str = "default"):
+        return memory_store.graph(project_id)
 
     # ---------- files ----------
     def _project_workdir(project_id: str) -> Path:

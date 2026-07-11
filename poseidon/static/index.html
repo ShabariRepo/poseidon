@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Poseidon</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔱</text></svg>" />
-  <link rel="stylesheet" href="/static/style.css?v=050" />
+  <link rel="stylesheet" href="/static/style.css?v=051" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
@@ -111,6 +111,14 @@
       <label>Max steps per turn <input id="eng-iter" type="number" min="5" max="60" /></label>
       <label class="check"><input id="eng-ckpt" type="checkbox" /> Auto-checkpoint after real work</label>
     </div>
+    <h3>Integrations</h3>
+    <div class="settings-grid">
+      <label>Gmail address <input id="int-gmail-email" placeholder="you@gmail.com" /></label>
+      <label>Gmail app password <input id="int-gmail-pass" type="password" placeholder="16-char app password" /></label>
+      <label>Slack bot token <input id="int-slack-token" type="password" placeholder="xoxb-…" /></label>
+      <label>Slack default channel <input id="int-slack-channel" placeholder="#general" /></label>
+    </div>
+    <p class="muted" id="int-status"></p>
     <h3>Always-allow rules</h3>
     <div id="rules-list" class="rules-list"><span class="muted">None yet — approve something with "Always allow".</span></div>
     <div class="modal-actions">
@@ -131,6 +139,6 @@
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=050"></script>
+  <script src="/static/app.js?v=051"></script>
 </body>
 </html>

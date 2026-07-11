@@ -69,6 +69,12 @@ class Store:
             CREATE INDEX IF NOT EXISTS idx_ckpt_session ON checkpoints (session_id, ts);
             """
         )
+        # members: per-member access tokens for server mode
+        mcols = {r[1] for r in c.execute("PRAGMA table_info(members)")}
+        if "token" not in mcols:
+            c.execute("ALTER TABLE members ADD COLUMN token TEXT")
+        for r in c.execute("SELECT id FROM members WHERE token IS NULL").fetchall():
+            c.execute("UPDATE members SET token=? WHERE id=?", (uuid.uuid4().hex, r[0]))
         # sessions table upgrades (pre-0.5 databases)
         cols = {r[1] for r in c.execute("PRAGMA table_info(sessions)")}
         for col, decl in [
@@ -142,13 +148,21 @@ class Store:
     def create_member(self, name: str, color: str) -> dict:
         mid = _id()
         self._exec(
-            "INSERT INTO members (id, name, color, created) VALUES (?,?,?,?)",
-            (mid, name.strip(), color, _now()),
+            "INSERT INTO members (id, name, color, created, token) VALUES (?,?,?,?,?)",
+            (mid, name.strip(), color, _now(), uuid.uuid4().hex),
         )
         return {"id": mid, "name": name.strip(), "color": color}
 
     def list_members(self) -> list:
-        return [dict(r) for r in self._db.execute("SELECT * FROM members ORDER BY created")]
+        return [dict(r) for r in self._db.execute("SELECT id, name, color, created FROM members ORDER BY created")]
+
+    def member_tokens(self) -> list:
+        return [dict(r) for r in self._db.execute("SELECT id, name, token FROM members ORDER BY created")]
+
+    def valid_token(self, token: str) -> bool:
+        if not token:
+            return False
+        return self._db.execute("SELECT 1 FROM members WHERE token=?", (token,)).fetchone() is not None
 
     def add_membership(self, project_id: str, member_id: str, role: str = "member"):
         self._exec(

@@ -53,6 +53,10 @@ DEFAULT_CONFIG = {
         "auto_checkpoint": True,   # checkpoint after write/run turns
         "max_iterations": 25,      # tool-loop cap per turn
     },
+    "integrations": {
+        "gmail": {"email": "", "app_password": ""},   # myaccount.google.com/apppasswords
+        "slack": {"bot_token": "", "default_channel": ""},
+    },
 }
 
 

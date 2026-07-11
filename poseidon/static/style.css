@@ -517,3 +517,14 @@ dialog h3 { margin: 16px 0 4px; font-size: .95rem; }
 .settings-grid input[type="checkbox"] { width: auto; }
 .rules-list { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
 .rule-row { display: flex; justify-content: space-between; align-items: center; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: .78rem; }
+
+/* ---- memory graph ---- */
+.memgraph-wrap { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 8px; margin-bottom: 12px; }
+.memgraph line { stroke: var(--accent); stroke-width: 1.5; opacity: .45; }
+.memgraph .memnode circle { fill: var(--accent); stroke: var(--bg-solid); stroke-width: 2; cursor: pointer; }
+.memgraph .memnode:hover circle { fill: var(--accent-deep); r: 11; }
+.memgraph .memnode.ghost circle { fill: none; stroke: var(--muted); stroke-dasharray: 3 3; }
+.memgraph .memnode text { fill: var(--text); font-size: 11px; text-anchor: middle; pointer-events: none; }
+.memgraph .memnode.ghost text { fill: var(--muted); font-style: italic; }
+.vault-hint { padding: 4px 6px 2px; }
+.schedule-card.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }

@@ -1,5 +1,13 @@
 /* Poseidon UI — vanilla JS, no build step. */
 const $ = (id) => document.getElementById(id);
+
+/* team server mode: member token from join link, sent on every request */
+const TOKEN = new URLSearchParams(location.search).get("token") || localStorage.getItem("poseidon-token") || "";
+if (TOKEN) {
+  localStorage.setItem("poseidon-token", TOKEN);
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (u, o = {}) => _fetch(u, { ...o, headers: { ...(o.headers || {}), "X-Poseidon-Token": TOKEN } });
+}
 const state = {
   projectId: null, memberId: null, sessionId: null, busy: false,
   presets: {}, engine: {}, rules: [], projects: [], members: [],
@@ -19,6 +27,7 @@ async function init() {
   fillMemberSelect();
   fillPresets(s);
   fillEngine();
+  fillIntegrations(s);
   fillRules();
   if (!s.configured) openSettings();
   await newSession();
@@ -156,7 +165,7 @@ $("drawer-close").onclick = () => ($("session-drawer").hidden = true);
 /* ---------- events (SSE) ---------- */
 function openEvents() {
   if (state.es) state.es.close();
-  state.es = new EventSource(`/api/events?session_id=${state.sessionId}&project_id=${state.projectId}`);
+  state.es = new EventSource(`/api/events?session_id=${state.sessionId}&project_id=${state.projectId}${TOKEN ? `&token=${TOKEN}` : ""}`);
   state.es.onmessage = (e) => handleEvent(JSON.parse(e.data));
 }
 
@@ -474,15 +483,94 @@ async function loadCheckpoints() {
   }
 }
 
-/* ---------- memory ---------- */
+/* ---------- memory (the brain: Obsidian-compatible vault + link graph) ---------- */
+function forceLayout(nodes, edges, w, h) {
+  const pos = {};
+  nodes.forEach((n, i) => {
+    const a = (i / nodes.length) * Math.PI * 2;
+    pos[n.id] = { x: w / 2 + Math.cos(a) * w * 0.3, y: h / 2 + Math.sin(a) * h * 0.3 };
+  });
+  const idx = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  for (let it = 0; it < 220; it++) {
+    const f = {};
+    nodes.forEach((n) => (f[n.id] = { x: 0, y: 0 }));
+    for (let i = 0; i < nodes.length; i++)
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = pos[nodes[i].id], b = pos[nodes[j].id];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        const d2 = Math.max(dx * dx + dy * dy, 100);
+        const rep = 5200 / d2;
+        const d = Math.sqrt(d2);
+        dx /= d; dy /= d;
+        f[nodes[i].id].x += dx * rep; f[nodes[i].id].y += dy * rep;
+        f[nodes[j].id].x -= dx * rep; f[nodes[j].id].y -= dy * rep;
+      }
+    for (const e of edges) {
+      if (!idx[e.source] || !idx[e.target]) continue;
+      const a = pos[e.source], b = pos[e.target];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+      const pull = (d - 95) * 0.02;
+      dx /= d; dy /= d;
+      f[e.source].x += dx * pull * d * 0.05; f[e.source].y += dy * pull * d * 0.05;
+      f[e.target].x -= dx * pull * d * 0.05; f[e.target].y -= dy * pull * d * 0.05;
+    }
+    const cool = 1 - it / 220;
+    for (const n of nodes) {
+      const p = pos[n.id];
+      p.x += (f[n.id].x + (w / 2 - p.x) * 0.01) * cool;
+      p.y += (f[n.id].y + (h / 2 - p.y) * 0.01) * cool;
+      p.x = Math.max(30, Math.min(w - 30, p.x));
+      p.y = Math.max(20, Math.min(h - 20, p.y));
+    }
+  }
+  return pos;
+}
+
 async function loadMemory() {
-  const { entries } = await fetch(`/api/memory?project_id=${state.projectId}`).then((r) => r.json());
+  const [graph, { entries }] = await Promise.all([
+    fetch(`/api/memory/graph?project_id=${state.projectId}`).then((r) => r.json()),
+    fetch(`/api/memory?project_id=${state.projectId}`).then((r) => r.json()),
+  ]);
   const list = $("memory-list");
-  list.innerHTML = entries.length ? "" : '<div class="feed-empty">Project memory — durable facts your team\'s agent has saved. Plain markdown on disk.</div>';
+  list.innerHTML = "";
+  if (!entries.length) {
+    list.innerHTML = '<div class="feed-empty">Project memory — durable facts your team\'s agent has saved, linked into a graph. Plain markdown on disk (an Obsidian-compatible vault).</div>';
+    return;
+  }
+  if (graph.nodes.length > 1 || graph.edges.length) {
+    const W = Math.max(list.clientWidth - 8, 480), H = 260;
+    const pos = forceLayout(graph.nodes, graph.edges, W, H);
+    let svg = `<svg class="memgraph" viewBox="0 0 ${W} ${H}" width="100%" height="${H}">`;
+    for (const e of graph.edges) {
+      const a = pos[e.source], b = pos[e.target];
+      if (a && b) svg += `<line x1="${a.x.toFixed(0)}" y1="${a.y.toFixed(0)}" x2="${b.x.toFixed(0)}" y2="${b.y.toFixed(0)}"/>`;
+    }
+    for (const n of graph.nodes) {
+      const p = pos[n.id];
+      svg += `<g class="memnode${n.ghost ? " ghost" : ""}" data-id="${esc(n.id)}">
+        <circle cx="${p.x.toFixed(0)}" cy="${p.y.toFixed(0)}" r="9"/>
+        <text x="${p.x.toFixed(0)}" y="${(p.y - 14).toFixed(0)}">${esc(n.title.slice(0, 22))}</text></g>`;
+    }
+    svg += "</svg>";
+    const wrap = document.createElement("div");
+    wrap.className = "memgraph-wrap";
+    wrap.innerHTML = svg + `<div class="meta vault-hint">🗂 vault: ${esc(graph.vault)} — open it in Obsidian for the full graph</div>`;
+    list.appendChild(wrap);
+    wrap.querySelectorAll(".memnode").forEach((g) => {
+      g.onclick = () => {
+        const card = list.querySelector(`[data-mem="${g.dataset.id}"]`);
+        if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 1200); }
+      };
+    });
+  }
   for (const e of entries) {
     const card = document.createElement("div");
     card.className = "schedule-card";
-    card.innerHTML = `<span class="when">🧠 ${esc(e.title)}</span><div class="last">${esc(e.preview.split("\n").slice(2).join(" ").slice(0, 220))}</div>`;
+    card.dataset.mem = e.name;
+    const linkbadges = (e.links || []).map((l) => `<span class="badge">[[${esc(l)}]]</span>`).join(" ");
+    card.innerHTML = `<span class="when">🧠 ${esc(e.title)}</span> ${linkbadges}
+      <div class="last">${esc(e.preview.split("\n").slice(2).join(" ").slice(0, 220))}</div>`;
     list.appendChild(card);
   }
 }
@@ -630,6 +718,14 @@ function fillEngine() {
   $("eng-ckpt").checked = !!state.engine.auto_checkpoint;
 }
 
+function fillIntegrations(s) {
+  const i = s.integrations || {};
+  $("int-gmail-email").value = i.gmail?.email || "";
+  $("int-slack-channel").value = i.slack?.default_channel || "";
+  $("int-status").textContent =
+    `Gmail: ${i.gmail?.configured ? "connected" : "not configured"} · Slack: ${i.slack?.configured ? "connected" : "not configured"}`;
+}
+
 function fillRules() {
   const box = $("rules-list");
   box.innerHTML = state.rules.length ? "" : '<span class="muted">None yet — approve something with "Always allow".</span>';
@@ -660,6 +756,14 @@ $("cfg-save").onclick = async (e) => {
     body: JSON.stringify({ compact_tokens: +$("eng-compact").value, keep_recent: +$("eng-keep").value,
       max_iterations: +$("eng-iter").value, auto_checkpoint: $("eng-ckpt").checked }) });
   if (r.ok) state.engine = (await r.json()).engine;
+  const integ = { gmail: { email: $("int-gmail-email").value }, slack: { default_channel: $("int-slack-channel").value } };
+  if ($("int-gmail-pass").value.trim()) integ.gmail.app_password = $("int-gmail-pass").value.trim();
+  if ($("int-slack-token").value.trim()) integ.slack.bot_token = $("int-slack-token").value.trim();
+  const ir = await fetch("/api/settings/integrations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(integ) });
+  if (ir.ok) {
+    const d = await ir.json();
+    $("int-status").textContent = `Gmail: ${d.gmail_configured ? "connected" : "not configured"} · Slack: ${d.slack_configured ? "connected" : "not configured"}`;
+  }
   $("settings-modal").close();
 };
 

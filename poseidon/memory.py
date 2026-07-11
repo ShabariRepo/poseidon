@@ -1,7 +1,9 @@
-"""Persistent memory, file school, scoped per project (team-shared): one
-markdown file per fact in ~/.poseidon/memory/<project>/, plus a MEMORY.md
-index injected into the system prompt. Transparent by design — open, edit,
-or delete your agent's memory with a text editor.
+"""Persistent memory: an Obsidian-compatible vault per project (team-shared).
+One markdown file per fact in ~/.poseidon/memory/<project>/, [[wikilinks]]
+between related facts, MEMORY.md index injected into the system prompt.
+The graph is parsed from the links — recall follows them (1 hop) so related
+facts surface together. Transparent by design: open the folder in any editor,
+or in Obsidian itself for the full graph view.
 """
 import re
 
@@ -9,6 +11,11 @@ from .config import CONFIG_DIR
 
 MAX_MEMORY_READ = 20_000
 MAX_INDEX_INJECT = 4_000
+WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
+
+
+def extract_links(text: str) -> list:
+    return [m.strip() for m in WIKILINK.findall(text or "")]
 
 
 def _dir(project_id: str):
@@ -45,7 +52,15 @@ def read(project_id: str, name: str) -> dict:
     path = _dir(project_id) / f"{_slug(name)}.md"
     if not path.is_file():
         return {"error": f"no memory named '{name}'"}
-    return {"content": path.read_text(errors="replace")[:MAX_MEMORY_READ]}
+    content = path.read_text(errors="replace")[:MAX_MEMORY_READ]
+    # associative recall: follow wikilinks one hop
+    linked = []
+    for title in extract_links(content)[:6]:
+        lp = _dir(project_id) / f"{_slug(title)}.md"
+        if lp.is_file():
+            ltext = lp.read_text(errors="replace")
+            linked.append({"title": title, "content": ltext[:1200]})
+    return {"content": content, "linked": linked}
 
 
 def forget(project_id: str, name: str) -> dict:
@@ -78,5 +93,23 @@ def list_entries(project_id: str) -> list:
             continue
         text = f.read_text(errors="replace")
         title = text.splitlines()[0].lstrip("# ").strip() if text else f.stem
-        out.append({"name": f.stem, "title": title, "preview": text[:400]})
+        out.append({"name": f.stem, "title": title, "preview": text[:400],
+                    "links": extract_links(text)})
     return out
+
+
+def graph(project_id: str) -> dict:
+    """The brain: nodes = memories, edges = wikilinks. Ghost nodes for links
+    that don't resolve yet (they mark something worth writing)."""
+    entries = list_entries(project_id)
+    slugs = {e["name"] for e in entries}
+    nodes = [{"id": e["name"], "title": e["title"], "ghost": False} for e in entries]
+    edges, ghosts = [], set()
+    for e in entries:
+        for title in e["links"]:
+            target = _slug(title)
+            if target not in slugs and target not in ghosts:
+                ghosts.add(target)
+                nodes.append({"id": target, "title": title, "ghost": True})
+            edges.append({"source": e["name"], "target": target})
+    return {"nodes": nodes, "edges": edges, "vault": str(_dir(project_id))}

@@ -16,8 +16,10 @@ def derive_pattern(tool: str, subject: str) -> str:
     if tool == "run_command":
         head = subject.split()[0] if subject.split() else subject
         return f"{head} *" if " " in subject else head
-    if tool == "schedule_task":
+    if tool in ("schedule_task",):
         return "*"
+    if tool in ("send_email", "slack_post"):
+        return subject  # that recipient / that channel
     return str(PurePath(subject).parent / "*")
 
 

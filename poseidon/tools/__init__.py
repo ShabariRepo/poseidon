@@ -5,7 +5,7 @@ approval — a subject() that extracts what the user is being asked to approve.
 ctx is {"workdir": Path}.
 """
 from .. import memory as memory_store
-from . import files, shell, web
+from . import comms, files, shell, web
 
 TOOLS = {}
 
@@ -119,7 +119,7 @@ async def _forget_memory(args, ctx):
 
 _register(
     "save_memory",
-    "Save a durable fact to persistent memory (survives across sessions). Use for lasting facts about the user, their projects, or their preferences — not session-only details. Overwrites if the title already exists.",
+    "Save a durable fact to persistent memory (survives across sessions, shared with the team). Connect related memories with [[Other Memory Title]] wikilinks inside the content — memory is a graph and linked facts are recalled together. Overwrites if the title already exists.",
     {
         "type": "object",
         "properties": {
@@ -151,6 +151,40 @@ _register(
         "required": ["name"],
     },
     _forget_memory,
+)
+
+
+_register(
+    "list_emails",
+    "List recent emails from the connected Gmail inbox (headers only).",
+    {"type": "object", "properties": {"limit": {"type": "integer", "description": "max emails, default 5"},
+     "unread_only": {"type": "boolean", "description": "default true"}}},
+    comms.list_emails,
+)
+
+_register(
+    "read_email",
+    "Read one email's full body by id (from list_emails).",
+    {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    comms.read_email,
+)
+
+_register(
+    "send_email",
+    "Send an email from the connected Gmail account.",
+    {"type": "object", "properties": {"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, "required": ["to", "subject", "body"]},
+    comms.send_email,
+    needs_approval=True,
+    subject=lambda a: (a.get("to", ""), f"Subject: {a.get('subject', '')}\n\n{a.get('body', '')[:1500]}"),
+)
+
+_register(
+    "slack_post",
+    "Post a message to Slack (uses the default channel if none given).",
+    {"type": "object", "properties": {"channel": {"type": "string"}, "text": {"type": "string"}}, "required": ["text"]},
+    comms.slack_post,
+    needs_approval=True,
+    subject=lambda a: (a.get("channel") or "default channel", a.get("text", "")[:1500]),
 )
 
 
