@@ -106,15 +106,15 @@ _register(
 
 
 async def _save_memory(args, ctx):
-    return memory_store.save(args["title"], args["content"])
+    return memory_store.save(ctx.get("project_id", "default"), args["title"], args["content"])
 
 
 async def _read_memory(args, ctx):
-    return memory_store.read(args["name"])
+    return memory_store.read(ctx.get("project_id", "default"), args["name"])
 
 
 async def _forget_memory(args, ctx):
-    return memory_store.forget(args["name"])
+    return memory_store.forget(ctx.get("project_id", "default"), args["name"])
 
 
 _register(

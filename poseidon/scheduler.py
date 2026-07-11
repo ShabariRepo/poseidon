@@ -1,6 +1,6 @@
-"""Scheduled autonomous runs. SQLite-backed; a background loop fires due
-prompts as fresh sessions. Unattended runs can only take approval-gated
-actions covered by an existing "always allow" rule — trust is earned first.
+"""Scheduled autonomous runs, per project. A background loop fires due prompts
+as fresh sessions + Runs(kind=scheduled). Unattended: approval-gated actions
+succeed only where an "always allow" rule exists — trust is earned first.
 """
 import asyncio
 import sqlite3
@@ -15,28 +15,24 @@ POLL_SECS = 20
 
 class Scheduler:
     def __init__(self, db_path: Path, runner):
-        """runner: async fn(prompt) -> (session_id, final_text)"""
+        """runner: async fn(project_id, prompt) -> (session_id, final_text)"""
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(db_path), check_same_thread=False)
         self._lock = threading.Lock()
         self._runner = runner
         self._db.execute(
             """CREATE TABLE IF NOT EXISTS schedules (
-                id TEXT PRIMARY KEY,
-                prompt TEXT,
-                kind TEXT,
-                value TEXT,
-                next_run REAL,
-                last_run REAL,
-                last_result TEXT DEFAULT '',
-                last_session TEXT DEFAULT '',
-                enabled INTEGER DEFAULT 1,
-                created REAL
+                id TEXT PRIMARY KEY, prompt TEXT, kind TEXT, value TEXT,
+                next_run REAL, last_run REAL, last_result TEXT DEFAULT '',
+                last_session TEXT DEFAULT '', enabled INTEGER DEFAULT 1,
+                created REAL, project_id TEXT DEFAULT 'default'
             )"""
         )
+        cols = {r[1] for r in self._db.execute("PRAGMA table_info(schedules)")}
+        if "project_id" not in cols:
+            self._db.execute("ALTER TABLE schedules ADD COLUMN project_id TEXT DEFAULT 'default'")
         self._db.commit()
 
-    # ---- schedule math ----
     @staticmethod
     def _compute_next(kind: str, value: str, after: float) -> float:
         if kind == "every":
@@ -44,8 +40,7 @@ class Scheduler:
         if kind == "daily":
             hh, mm = value.split(":")
             candidate = datetime.fromtimestamp(after).replace(
-                hour=int(hh), minute=int(mm), second=0, microsecond=0
-            )
+                hour=int(hh), minute=int(mm), second=0, microsecond=0)
             if candidate.timestamp() <= after:
                 candidate += timedelta(days=1)
             return candidate.timestamp()
@@ -53,15 +48,14 @@ class Scheduler:
             return datetime.fromisoformat(value).timestamp()
         raise ValueError(f"unknown schedule kind: {kind}")
 
-    # ---- CRUD ----
-    def add(self, prompt: str, every_minutes=None, daily_at=None, once_at=None) -> dict:
+    def add(self, project_id: str, prompt: str, every_minutes=None, daily_at=None, once_at=None) -> dict:
         given = [x for x in (every_minutes, daily_at, once_at) if x]
         if len(given) != 1:
             raise ValueError("provide exactly one of every_minutes, daily_at, once_at")
         if every_minutes:
             kind, value = "every", str(float(every_minutes))
         elif daily_at:
-            datetime.strptime(daily_at, "%H:%M")  # validate
+            datetime.strptime(daily_at, "%H:%M")
             kind, value = "daily", daily_at
         else:
             kind, value = "once", once_at
@@ -71,29 +65,22 @@ class Scheduler:
         sid = uuid.uuid4().hex[:10]
         with self._lock:
             self._db.execute(
-                "INSERT INTO schedules (id, prompt, kind, value, next_run, created) VALUES (?,?,?,?,?,?)",
-                (sid, prompt, kind, value, next_run, time.time()),
+                "INSERT INTO schedules (id, prompt, kind, value, next_run, created, project_id) VALUES (?,?,?,?,?,?,?)",
+                (sid, prompt, kind, value, next_run, time.time(), project_id),
             )
             self._db.commit()
         return {"id": sid, "next_run": datetime.fromtimestamp(next_run).isoformat(timespec="minutes")}
 
-    def list(self) -> list:
+    def list(self, project_id: str) -> list:
         rows = self._db.execute(
             """SELECT id, prompt, kind, value, next_run, last_run, last_result, last_session
-               FROM schedules WHERE enabled=1 ORDER BY next_run"""
+               FROM schedules WHERE enabled=1 AND project_id=? ORDER BY next_run""",
+            (project_id,),
         ).fetchall()
         fmt = lambda ts: datetime.fromtimestamp(ts).isoformat(timespec="minutes") if ts else None
         return [
-            {
-                "id": r[0],
-                "prompt": r[1],
-                "kind": r[2],
-                "value": r[3],
-                "next_run": fmt(r[4]),
-                "last_run": fmt(r[5]),
-                "last_result": (r[6] or "")[:300],
-                "last_session": r[7],
-            }
+            {"id": r[0], "prompt": r[1], "kind": r[2], "value": r[3], "next_run": fmt(r[4]),
+             "last_run": fmt(r[5]), "last_result": (r[6] or "")[:300], "last_session": r[7]}
             for r in rows
         ]
 
@@ -103,34 +90,31 @@ class Scheduler:
             self._db.commit()
         return cur.rowcount > 0
 
-    # ---- firing ----
     async def loop(self):
         while True:
             await asyncio.sleep(POLL_SECS)
             now = time.time()
             due = self._db.execute(
-                "SELECT id, prompt, kind, value FROM schedules WHERE enabled=1 AND next_run <= ?",
+                "SELECT id, prompt, kind, value, project_id FROM schedules WHERE enabled=1 AND next_run <= ?",
                 (now,),
             ).fetchall()
             for row in due:
                 self._advance(row)  # reschedule BEFORE running: no double-fire
-                asyncio.ensure_future(self._fire(row[0], row[1]))
+                asyncio.ensure_future(self._fire(row[0], row[1], row[4]))
 
     def _advance(self, row):
-        sid, _, kind, value = row
+        sid, _, kind, value, _pid = row
         with self._lock:
             if kind == "once":
                 self._db.execute("UPDATE schedules SET enabled=0 WHERE id=?", (sid,))
             else:
-                self._db.execute(
-                    "UPDATE schedules SET next_run=? WHERE id=?",
-                    (self._compute_next(kind, value, time.time()), sid),
-                )
+                self._db.execute("UPDATE schedules SET next_run=? WHERE id=?",
+                                 (self._compute_next(kind, value, time.time()), sid))
             self._db.commit()
 
-    async def _fire(self, sid: str, prompt: str):
+    async def _fire(self, sid: str, prompt: str, project_id: str):
         try:
-            session_id, text = await self._runner(prompt)
+            session_id, text = await self._runner(project_id, prompt)
             result = text or "(no output)"
         except Exception as e:
             session_id, result = "", f"error: {str(e)[:200]}"

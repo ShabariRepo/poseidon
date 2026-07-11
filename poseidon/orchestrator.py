@@ -1,13 +1,15 @@
-"""The agent loop: OpenAI-compatible chat completions with tools, run until
-no more tool calls. Every tool result carries its tool_call_id — orphaned
-results make upstreams return empty completions.
+"""The agent engine.
 
-The loop is shared by the main agent and subagents. Meta-tools (subagents,
-scheduling, task lists) are main-agent-only and handled here, not in the
-tool registry, because they need the run context.
+Every unit of work is a Run (chat turn, background task, scheduled fire,
+subagent) — see ARCHITECTURE.md. The loop is shared; meta-tools give the model
+delegation (subagents, background), time (schedules), memory, checkpoints,
+progress, and team awareness. Context is compacted automatically. Every tool
+result carries its tool_call_id — orphaned results make upstreams return empty
+completions.
 """
 import asyncio
 import json
+import time
 import uuid
 from pathlib import Path
 
@@ -18,333 +20,399 @@ from .config import load_config
 from .costs import compute_cost
 from .tools import TOOLS, tool_schemas
 
-MAX_ITERATIONS = 25
-SUB_MAX_ITERATIONS = 15
 MAX_TOOL_RESULT = 12_000
+SUB_MAX_ITERATIONS = 15
 
-SYSTEM_PROMPT = """You are Poseidon, an AI agent working on the user's machine in {workdir}.
+SYSTEM_PROMPT = """You are Poseidon, an AI agent working in the project "{project_name}" at {workdir}.
 Be warm, direct, and first-person. Understand what the user actually wants — if a request is ambiguous, ask one clarifying question instead of guessing.
 For multi-step work, call set_tasks first with a short checklist and update statuses as you go.
-Delegate big self-contained chunks with run_subagent; several run_subagent calls in one reply run in parallel.
+Delegate self-contained chunks with run_subagent (parallel when called together). For long work the user shouldn't wait on, use start_background_task and tell them you'll have it in the background; check on it with run_status.
 Use schedule_task for anything recurring or "later". Unattended runs can only write/run what an "always allow" rule already covers.
-You have persistent memory across sessions: save durable facts (who the user is, their preferences, ongoing projects) with save_memory; check your memory index before asking things you should already know; read_memory for details, forget_memory for stale facts.
+You have persistent project memory shared with the team: save durable facts with save_memory, check the memory index before asking things you should know, read_memory / forget_memory as needed.
+This is a shared team project. The Project pulse below shows what teammates are doing; use project_status for detail when asked "what's the status" or "where did X leave off".
+When you finish significant work, call set_progress with a one-line handoff note, and save_checkpoint before risky changes.
 Reads are instant; writes and commands ask for approval — that's normal, don't apologize for it.
 When you finish, summarize what changed in plain language."""
 
-SUBAGENT_PROMPT = """You are a Poseidon subagent working in {workdir}, delegated one task by the main agent.
-Complete the task with tools, then reply with a concise result — your final message is returned to the main agent.
+SUBAGENT_PROMPT = """You are a Poseidon subagent working in {workdir}, delegated one task.
+Complete it with tools, then reply with a concise result — your final message is returned to the main agent.
 Writes and commands may require user approval; if denied, work around it or report it."""
 
+BACKGROUND_PROMPT = """You are a Poseidon background agent working in {workdir} on one task, unattended.
+No one is watching: approval-gated actions succeed only where an "always allow" rule exists — if denied, do what you can and report clearly.
+Your final message is the task's result; make it a complete, useful report."""
+
 META_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "set_tasks",
-            "description": "Show/update your working checklist in the UI. Call with the full list each time.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "tasks": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "title": {"type": "string"},
-                                "status": {"type": "string", "enum": ["pending", "in_progress", "done"]},
-                            },
-                            "required": ["title", "status"],
-                        },
-                    }
-                },
-                "required": ["tasks"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_subagent",
-            "description": "Delegate a self-contained task to a subagent with its own context. Multiple calls in one reply run in parallel. Returns the subagent's final report.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task": {"type": "string", "description": "Complete, self-contained instructions"},
-                    "context": {"type": "string", "description": "Optional extra context the subagent needs"},
-                },
-                "required": ["task"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "schedule_task",
-            "description": "Schedule a prompt to run automatically later. Provide exactly one of: every_minutes (recurring interval), daily_at (recurring, 'HH:MM' 24h local), once_at (one-shot, ISO datetime).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {"type": "string", "description": "What the scheduled run should do"},
-                    "every_minutes": {"type": "number"},
-                    "daily_at": {"type": "string"},
-                    "once_at": {"type": "string"},
-                },
-                "required": ["prompt"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_schedules",
-            "description": "List all scheduled tasks with their next/last run times.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "cancel_schedule",
-            "description": "Cancel a scheduled task by id.",
-            "parameters": {
-                "type": "object",
-                "properties": {"id": {"type": "string"}},
-                "required": ["id"],
-            },
-        },
-    },
+    {"type": "function", "function": {"name": "set_tasks", "description": "Show/update your working checklist in the UI. Call with the full list each time.", "parameters": {"type": "object", "properties": {"tasks": {"type": "array", "items": {"type": "object", "properties": {"title": {"type": "string"}, "status": {"type": "string", "enum": ["pending", "in_progress", "done"]}}, "required": ["title", "status"]}}}, "required": ["tasks"]}}},
+    {"type": "function", "function": {"name": "run_subagent", "description": "Delegate a self-contained task to a subagent. Multiple calls in one reply run in parallel. Returns the subagent's report.", "parameters": {"type": "object", "properties": {"task": {"type": "string"}, "context": {"type": "string"}}, "required": ["task"]}}},
+    {"type": "function", "function": {"name": "start_background_task", "description": "Start a task that runs in the background while the conversation continues. Returns a run_id immediately. Unattended: only pre-approved (always-allow) writes/commands succeed.", "parameters": {"type": "object", "properties": {"task": {"type": "string", "description": "Complete, self-contained instructions"}, "label": {"type": "string", "description": "Short display name"}}, "required": ["task"]}}},
+    {"type": "function", "function": {"name": "run_status", "description": "Status of runs: pass run_id for one, or omit for all active + recent runs in this project.", "parameters": {"type": "object", "properties": {"run_id": {"type": "string"}}}}},
+    {"type": "function", "function": {"name": "project_status", "description": "Team/project overview: recent sessions with owner + progress, active runs, schedules. Use when asked what's happening or where someone left off.", "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "schedule_task", "description": "Schedule a prompt to run automatically. Exactly one of: every_minutes, daily_at ('HH:MM' 24h), once_at (ISO datetime).", "parameters": {"type": "object", "properties": {"prompt": {"type": "string"}, "every_minutes": {"type": "number"}, "daily_at": {"type": "string"}, "once_at": {"type": "string"}}, "required": ["prompt"]}}},
+    {"type": "function", "function": {"name": "list_schedules", "description": "List scheduled tasks with next/last run.", "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "cancel_schedule", "description": "Cancel a scheduled task by id.", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {"name": "save_checkpoint", "description": "Snapshot this session (conversation + progress + touched files) so work can be reviewed or rewound.", "parameters": {"type": "object", "properties": {"label": {"type": "string"}}, "required": ["label"]}}},
+    {"type": "function", "function": {"name": "set_progress", "description": "Set the session's one-line progress/handoff note (what's done, what's next). Teammates see this.", "parameters": {"type": "object", "properties": {"note": {"type": "string"}}, "required": ["note"]}}},
 ]
 META_NAMES = {s["function"]["name"] for s in META_SCHEMAS}
+GATED_TOOLS = {"write_file", "edit_file", "run_command"}
 
 
-async def _chat_completion(provider: dict, messages: list, tools: list) -> dict:
+def engine_settings() -> dict:
+    cfg = load_config()
+    eng = cfg.get("engine") or {}
+    return {
+        "compact_tokens": int(eng.get("compact_tokens", 24000)),
+        "keep_recent": int(eng.get("keep_recent", 8)),
+        "auto_checkpoint": bool(eng.get("auto_checkpoint", True)),
+        "max_iterations": int(eng.get("max_iterations", 25)),
+    }
+
+
+async def _chat_completion(provider, messages, tools):
     headers = {}
     if provider.get("api_key"):
         headers["Authorization"] = f"Bearer {provider['api_key']}"
-    body = {
-        "model": provider["model"],
-        "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
-    }
+    body = {"model": provider["model"], "messages": messages}
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
     async with httpx.AsyncClient(timeout=180) as client:
         r = await client.post(
-            provider["base_url"].rstrip("/") + "/chat/completions",
-            json=body,
-            headers=headers,
+            provider["base_url"].rstrip("/") + "/chat/completions", json=body, headers=headers
         )
     if r.status_code >= 400:
         raise RuntimeError(f"provider returned {r.status_code}: {r.text[:500]}")
     return r.json()
 
 
-def _build_system_prompt(workdir: Path) -> str:
-    prompt = SYSTEM_PROMPT.format(workdir=workdir)
+def _estimate_tokens(messages) -> int:
+    return sum(len(json.dumps(m)) for m in messages) // 4
+
+
+def _build_system_prompt(project, store) -> str:
+    workdir = Path(project["workdir"])
+    prompt = SYSTEM_PROMPT.format(project_name=project["name"], workdir=workdir)
     agents_md = workdir / "AGENTS.md"
     if agents_md.is_file():
-        prompt += "\n\nProject instructions (AGENTS.md):\n" + agents_md.read_text(
-            errors="replace"
-        )[:6000]
-    index = memory_store.load_index()
+        prompt += "\n\nProject instructions (AGENTS.md):\n" + agents_md.read_text(errors="replace")[:6000]
+    index = memory_store.load_index(project["id"])
     if index:
-        prompt += "\n\nYour memory index (one line per saved memory):\n" + index
+        prompt += "\n\nProject memory index (read_memory for details):\n" + index
+    pulse = _project_pulse(project["id"], store)
+    if pulse:
+        prompt += "\n\nProject pulse (team activity):\n" + pulse
     return prompt
 
 
-async def run_turn(
-    workdir, store, session_id, user_message, emit, broker, scheduler=None, unattended=False
-):
+def _project_pulse(project_id, store) -> str:
+    lines = []
+    for s in store.list_sessions(project_id, limit=5):
+        if s.get("progress") or s.get("title"):
+            when = time.strftime("%b %d %H:%M", time.localtime(s["updated"] or 0))
+            lines.append(f"- [{s.get('member_name') or '?'} · {when}] {s.get('title') or 'untitled'}: {s.get('progress') or '(no note)'}")
+    active = store.active_runs(project_id)
+    for r in active[:5]:
+        lines.append(f"- RUNNING {r['kind']} \"{r['label']}\" (run {r['id']})")
+    return "\n".join(lines[:10])
+
+
+class TurnContext:
+    """Everything one run needs. Passed through the loop."""
+    def __init__(self, project, store, runmgr, broker, scheduler, session_id, member_id,
+                 run_id, emit, unattended):
+        self.project = project
+        self.workdir = Path(project["workdir"])
+        self.store = store
+        self.runmgr = runmgr
+        self.broker = broker
+        self.scheduler = scheduler
+        self.session_id = session_id
+        self.member_id = member_id
+        self.run_id = run_id
+        self.emit = emit
+        self.unattended = unattended
+        self.touched_files: set[str] = set()
+        self.gated_executed = False
+        self.progress_set = False
+
+
+async def run_turn(project, store, runmgr, broker, scheduler, session_id, member_id,
+                   user_message, kind="chat", unattended=False):
     cfg = load_config()
     provider = cfg.get("provider")
+    label = user_message[:120]
+    run_id = runmgr.start(project["id"], session_id, None, kind, label)
+    emit = runmgr.emitter(project["id"], session_id, run_id)
     if not provider or not provider.get("base_url"):
         await emit({"type": "error", "message": "No provider configured — open Settings."})
+        runmgr.finish(project["id"], session_id, run_id, "error", "no provider")
         return
 
-    run = {
-        "provider": provider,
-        "workdir": workdir,
-        "store": store,
-        "session_id": session_id,
-        "emit": emit,
-        "broker": broker,
-        "scheduler": scheduler,
-        "unattended": unattended,
-    }
+    ctx = TurnContext(project, store, runmgr, broker, scheduler, session_id, member_id,
+                      run_id, emit, unattended)
     messages = store.get_messages(session_id)
     if not messages:
-        messages.append({"role": "system", "content": _build_system_prompt(workdir)})
+        messages.append({"role": "system", "content": _build_system_prompt(project, store)})
+        store.set_title(session_id, user_message[:80])
     messages.append({"role": "user", "content": user_message})
     await emit({"type": "turn_started"})
+    status, err = "done", ""
     try:
-        await _agent_loop(run, messages, MAX_ITERATIONS, agent=None, allow_meta=True)
+        settings = engine_settings()
+        messages = await _maybe_compact(ctx, provider, messages, settings)
+        final = await _agent_loop(ctx, provider, messages, settings["max_iterations"],
+                                  agent=None, allow_meta=True)
+        if not ctx.progress_set and final:
+            store.set_progress(session_id, final[:300])
+        if ctx.gated_executed and settings["auto_checkpoint"]:
+            _checkpoint(ctx, messages, label=user_message[:100], auto=True)
+            await emit({"type": "checkpoint_saved", "auto": True})
+        err = (final or "")[:800]  # run result = final assistant text
     except Exception as e:  # surface, don't swallow
-        await emit({"type": "error", "message": str(e)[:800]})
+        status, err = "error", str(e)[:800]
+        await emit({"type": "error", "message": err})
     finally:
         store.save_messages(session_id, messages)
         await emit({"type": "turn_complete"})
+        runmgr.finish(project["id"], session_id, run_id, status, err)
 
 
-async def _agent_loop(run, messages, max_iter, agent, allow_meta) -> str:
-    emit = run["emit"]
+async def _maybe_compact(ctx, provider, messages, settings) -> list:
+    if _estimate_tokens(messages) < settings["compact_tokens"] or len(messages) < 12:
+        return messages
+    boundary = max(1, len(messages) - settings["keep_recent"])
+    while boundary > 1 and messages[boundary].get("role") != "user":
+        boundary -= 1
+    if boundary <= 1:
+        return messages
+    old, recent = messages[1:boundary], messages[boundary:]
+    dump = json.dumps(old)[:60_000]
+    try:
+        data = await _chat_completion(provider, [
+            {"role": "system", "content": "Summarize this agent conversation history into a dense progress brief: what was asked, what was done (files, commands, results), decisions made, open items. Keep every fact needed to continue the work."},
+            {"role": "user", "content": dump},
+        ], tools=None)
+        summary = data["choices"][0]["message"].get("content") or ""
+    except Exception:
+        return messages  # compaction is best-effort, never fatal
+    await ctx.emit({"type": "compacted", "dropped": len(old)})
+    return [messages[0], {"role": "system", "content": f"[Compacted history]\n{summary[:8000]}"}] + recent
+
+
+def _checkpoint(ctx, messages, label, auto):
+    files = {}
+    for p in list(ctx.touched_files)[:20]:
+        try:
+            path = Path(p)
+            if path.is_file() and path.stat().st_size <= 65_536:
+                files[p] = path.read_text(errors="replace")
+        except OSError:
+            pass
+    meta = ctx.store.session_meta(ctx.session_id) or {}
+    return ctx.store.create_checkpoint(
+        ctx.session_id, ctx.project["id"], ctx.member_id, label,
+        meta.get("progress") or "", messages, files, auto,
+    )
+
+
+async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> str:
     schemas = tool_schemas() + (META_SCHEMAS if allow_meta else [])
     last_content = ""
     for _ in range(max_iter):
-        data = await _chat_completion(run["provider"], messages, schemas)
-        usd, priced = compute_cost(run["provider"]["model"], data.get("usage"))
-        run["store"].add_usage(run["session_id"], usd, priced, data.get("usage"))
-        await emit({"type": "cost_update", **run["store"].get_cost(run["session_id"])})
+        data = await _chat_completion(provider, messages, schemas)
+        usd, priced = compute_cost(provider["model"], data.get("usage"))
+        ctx.store.add_usage(ctx.session_id, usd, priced, data.get("usage"))
+        ctx.store.add_run_cost(ctx.run_id, usd)
+        await ctx.emit({"type": "cost_update", **ctx.store.get_cost(ctx.session_id)})
 
         msg = data["choices"][0]["message"]
         messages.append(msg)
         if msg.get("content"):
             last_content = msg["content"]
-            await emit({"type": "assistant_message", "content": msg["content"], "agent": agent})
+            await ctx.emit({"type": "assistant_message", "content": msg["content"], "agent": agent})
 
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
             break
-
-        # parallel fan-out when the model delegates several subagents at once
         if allow_meta and len(tool_calls) > 1 and all(
             tc["function"]["name"] == "run_subagent" for tc in tool_calls
         ):
-            results = await asyncio.gather(
-                *(_dispatch(run, tc, agent, allow_meta) for tc in tool_calls)
-            )
+            results = await asyncio.gather(*(_dispatch(ctx, provider, tc, agent, allow_meta) for tc in tool_calls))
         else:
-            results = [await _dispatch(run, tc, agent, allow_meta) for tc in tool_calls]
-
+            results = [await _dispatch(ctx, provider, tc, agent, allow_meta) for tc in tool_calls]
         for tc, result in zip(tool_calls, results):
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": json.dumps(result)[:MAX_TOOL_RESULT],
-                }
-            )
+            messages.append({"role": "tool", "tool_call_id": tc["id"],
+                             "content": json.dumps(result)[:MAX_TOOL_RESULT]})
     else:
-        await emit({"type": "error", "message": f"Stopped after {max_iter} steps.", "agent": agent})
+        await ctx.emit({"type": "error", "message": f"Stopped after {max_iter} steps.", "agent": agent})
     return last_content
 
 
-async def _dispatch(run, tc, agent, allow_meta) -> dict:
+async def _dispatch(ctx, provider, tc, agent, allow_meta) -> dict:
     name = tc["function"]["name"]
     try:
         args = json.loads(tc["function"].get("arguments") or "{}")
     except json.JSONDecodeError:
         args = {}
-    await run["emit"]({"type": "tool_call", "name": name, "args": args, "agent": agent})
+    await ctx.emit({"type": "tool_call", "name": name, "args": args, "agent": agent})
     if name in META_NAMES:
-        result = await _exec_meta(run, name, args) if allow_meta else {
-            "error": "meta tools are main-agent only"
-        }
+        result = await _exec_meta(ctx, provider, name, args) if allow_meta else {"error": "meta tools are main-agent only"}
     else:
-        result = await _execute_tool(run, name, args)
-    await run["emit"](
-        {
-            "type": "tool_result",
-            "name": name,
-            "ok": "error" not in result,
-            "summary": _summarize(result),
-            "agent": agent,
-        }
-    )
+        result = await _execute_tool(ctx, name, args)
+    await ctx.emit({"type": "tool_result", "name": name, "ok": "error" not in result,
+                    "summary": _summarize(result), "agent": agent})
     return result
 
 
-async def _execute_tool(run, name, args) -> dict:
+async def _execute_tool(ctx, name, args) -> dict:
     spec = TOOLS.get(name)
     if not spec:
         return {"error": f"unknown tool: {name}"}
     if spec["needs_approval"]:
         subject, detail = spec["subject"](args)
-        decision = await run["broker"].request(
-            run["emit"], name, subject, detail, unattended=run["unattended"]
-        )
+        decision = await ctx.broker.request(ctx.emit, name, subject, detail, unattended=ctx.unattended)
         if not decision["approved"]:
-            if decision.get("unattended"):
-                reason = "denied (unattended run, no matching 'always allow' rule)"
-            elif decision.get("timeout"):
-                reason = "timed out"
-            else:
-                reason = "denied by user"
+            reason = ("denied (unattended run, no matching 'always allow' rule)"
+                      if decision.get("unattended") else
+                      "timed out" if decision.get("timeout") else "denied by user")
             return {"error": f"approval {reason}"}
     try:
-        return await spec["handler"](args, {"workdir": run["workdir"]})
+        result = await spec["handler"](args, {"workdir": ctx.workdir, "project_id": ctx.project["id"]})
+        if name in GATED_TOOLS and "error" not in result:
+            ctx.gated_executed = True
+            if args.get("path"):
+                ctx.touched_files.add(str((ctx.workdir / args["path"]).resolve()))
+        return result
     except Exception as e:
         return {"error": str(e)[:500]}
 
 
-async def _exec_meta(run, name, args) -> dict:
+async def _exec_meta(ctx, provider, name, args) -> dict:
+    store, runmgr = ctx.store, ctx.runmgr
+
     if name == "set_tasks":
         tasks = args.get("tasks") or []
-        await run["emit"]({"type": "tasks_update", "tasks": tasks})
+        await ctx.emit({"type": "tasks_update", "tasks": tasks})
         return {"ok": True, "count": len(tasks)}
 
     if name == "run_subagent":
-        return await _run_subagent(run, args)
+        return await _run_subagent(ctx, provider, args)
 
-    scheduler = run["scheduler"]
+    if name == "start_background_task":
+        task = (args.get("task") or "").strip()
+        if not task:
+            return {"error": "task is required"}
+        label = (args.get("label") or task)[:80]
+        rid = runmgr.start(ctx.project["id"], ctx.session_id, ctx.run_id, "background", label)
+        runmgr.spawn(_run_background(ctx, provider, rid, task))
+        return {"ok": True, "run_id": rid, "note": "running in background; check with run_status"}
+
+    if name == "run_status":
+        if args.get("run_id"):
+            line = store.run_status_line(args["run_id"])
+            return line or {"error": "no run with that id"}
+        runs = store.list_runs(ctx.project["id"], limit=15)
+        return {"runs": [{k: r[k] for k in ("id", "kind", "label", "status", "result")} for r in runs]}
+
+    if name == "project_status":
+        return {
+            "sessions": [
+                {"title": s["title"], "member": s.get("member_name"), "progress": s["progress"],
+                 "updated": s["updated"]}
+                for s in store.list_sessions(ctx.project["id"], limit=8)
+            ],
+            "active_runs": [
+                {"id": r["id"], "kind": r["kind"], "label": r["label"]}
+                for r in store.active_runs(ctx.project["id"])
+            ],
+            "schedules": ctx.scheduler.list(ctx.project["id"]) if ctx.scheduler else [],
+        }
+
+    if name == "save_checkpoint":
+        cid = _checkpoint(ctx, store.get_messages(ctx.session_id), args.get("label") or "manual", auto=False)
+        await ctx.emit({"type": "checkpoint_saved", "auto": False})
+        return {"ok": True, "checkpoint_id": cid}
+
+    if name == "set_progress":
+        note = (args.get("note") or "").strip()
+        if not note:
+            return {"error": "note is required"}
+        store.set_progress(ctx.session_id, note)
+        ctx.progress_set = True
+        await ctx.emit({"type": "progress_update", "note": note[:300]})
+        return {"ok": True}
+
+    scheduler = ctx.scheduler
     if scheduler is None:
         return {"error": "scheduler unavailable in this context"}
-
     if name == "schedule_task":
         prompt = (args.get("prompt") or "").strip()
         if not prompt:
             return {"error": "prompt is required"}
-        when = (
-            f"every {args['every_minutes']} min"
-            if args.get("every_minutes")
-            else f"daily at {args['daily_at']}"
-            if args.get("daily_at")
-            else f"once at {args.get('once_at')}"
-        )
-        decision = await run["broker"].request(
-            run["emit"], "schedule_task", when, prompt, unattended=run["unattended"]
-        )
+        when = (f"every {args['every_minutes']} min" if args.get("every_minutes")
+                else f"daily at {args['daily_at']}" if args.get("daily_at")
+                else f"once at {args.get('once_at')}")
+        decision = await ctx.broker.request(ctx.emit, "schedule_task", when, prompt, unattended=ctx.unattended)
         if not decision["approved"]:
             return {"error": "schedule not approved by user"}
         try:
-            return scheduler.add(
-                prompt,
-                every_minutes=args.get("every_minutes"),
-                daily_at=args.get("daily_at"),
-                once_at=args.get("once_at"),
-            )
+            return scheduler.add(ctx.project["id"], prompt,
+                                 every_minutes=args.get("every_minutes"),
+                                 daily_at=args.get("daily_at"), once_at=args.get("once_at"))
         except ValueError as e:
             return {"error": str(e)}
-
     if name == "list_schedules":
-        return {"schedules": scheduler.list()}
-
+        return {"schedules": scheduler.list(ctx.project["id"])}
     if name == "cancel_schedule":
-        ok = scheduler.cancel(args.get("id", ""))
-        return {"ok": ok} if ok else {"error": "no schedule with that id"}
-
+        return {"ok": True} if scheduler.cancel(args.get("id", "")) else {"error": "no schedule with that id"}
     return {"error": f"unknown meta tool: {name}"}
 
 
-async def _run_subagent(run, args) -> dict:
+async def _run_subagent(ctx, provider, args) -> dict:
     task = (args.get("task") or "").strip()
     if not task:
         return {"error": "task is required"}
     label = f"sub:{uuid.uuid4().hex[:4]}"
-    await run["emit"]({"type": "subagent_started", "agent": label, "task": task[:200]})
+    rid = ctx.runmgr.start(ctx.project["id"], ctx.session_id, ctx.run_id, "subagent", task[:120])
+    sub_ctx = TurnContext(ctx.project, ctx.store, ctx.runmgr, ctx.broker, ctx.scheduler,
+                          ctx.session_id, ctx.member_id, rid,
+                          ctx.runmgr.emitter(ctx.project["id"], ctx.session_id, rid), ctx.unattended)
+    await sub_ctx.emit({"type": "subagent_started", "agent": label, "task": task[:200]})
     messages = [
-        {"role": "system", "content": SUBAGENT_PROMPT.format(workdir=run["workdir"])},
-        {
-            "role": "user",
-            "content": task + (f"\n\nContext:\n{args['context']}" if args.get("context") else ""),
-        },
+        {"role": "system", "content": SUBAGENT_PROMPT.format(workdir=ctx.workdir)},
+        {"role": "user", "content": task + (f"\n\nContext:\n{args['context']}" if args.get("context") else "")},
     ]
     try:
-        result = await _agent_loop(run, messages, SUB_MAX_ITERATIONS, agent=label, allow_meta=False)
+        result = await _agent_loop(sub_ctx, provider, messages, SUB_MAX_ITERATIONS, agent=label, allow_meta=False)
+        ctx.gated_executed = ctx.gated_executed or sub_ctx.gated_executed
+        ctx.touched_files |= sub_ctx.touched_files
     except Exception as e:
-        await run["emit"]({"type": "subagent_complete", "agent": label, "result": f"error: {e}"})
+        ctx.runmgr.finish(ctx.project["id"], ctx.session_id, rid, "error", str(e)[:300])
+        await sub_ctx.emit({"type": "subagent_complete", "agent": label, "result": f"error: {e}"})
         return {"error": f"subagent failed: {str(e)[:300]}"}
-    await run["emit"](
-        {"type": "subagent_complete", "agent": label, "result": (result or "")[:300]}
-    )
+    ctx.runmgr.finish(ctx.project["id"], ctx.session_id, rid, "done", (result or "")[:800])
+    await sub_ctx.emit({"type": "subagent_complete", "agent": label, "result": (result or "")[:300]})
     return {"result": result or "(subagent produced no final text)"}
+
+
+async def _run_background(parent_ctx, provider, rid, task):
+    """Detached: own context, unattended, reports into the run record."""
+    ctx = TurnContext(parent_ctx.project, parent_ctx.store, parent_ctx.runmgr,
+                      parent_ctx.broker, parent_ctx.scheduler, parent_ctx.session_id,
+                      parent_ctx.member_id, rid,
+                      parent_ctx.runmgr.emitter(parent_ctx.project["id"], parent_ctx.session_id, rid),
+                      unattended=True)
+    messages = [
+        {"role": "system", "content": BACKGROUND_PROMPT.format(workdir=ctx.workdir)},
+        {"role": "user", "content": task},
+    ]
+    try:
+        result = await _agent_loop(ctx, provider, messages, SUB_MAX_ITERATIONS,
+                                   agent=f"bg:{rid[:4]}", allow_meta=False)
+        ctx.runmgr.finish(ctx.project["id"], ctx.session_id, rid, "done", (result or "")[:1500])
+    except Exception as e:
+        ctx.runmgr.finish(ctx.project["id"], ctx.session_id, rid, "error", str(e)[:500])
 
 
 def _summarize(result: dict) -> str:
@@ -352,6 +420,8 @@ def _summarize(result: dict) -> str:
         return result["error"][:200]
     if "result" in result:
         return str(result["result"])[:200]
+    if "run_id" in result:
+        return f"run {result['run_id']}"
     if "content" in result:
         return f"{len(result['content'])} chars"
     if "entries" in result:
@@ -360,4 +430,8 @@ def _summarize(result: dict) -> str:
         return f"exit {result['exit_code']}"
     if "schedules" in result:
         return f"{len(result['schedules'])} schedules"
+    if "runs" in result:
+        return f"{len(result['runs'])} runs"
+    if "sessions" in result:
+        return "project status"
     return "ok"

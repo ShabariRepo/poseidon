@@ -47,6 +47,12 @@ DEFAULT_CONFIG = {
         # writes and commands ask unless a rule matches.
         "rules": []  # [{"tool": "run_command", "pattern": "git *"}]
     },
+    "engine": {
+        "compact_tokens": 24000,   # compact context above this estimate
+        "keep_recent": 8,          # messages kept verbatim through compaction
+        "auto_checkpoint": True,   # checkpoint after write/run turns
+        "max_iterations": 25,      # tool-loop cap per turn
+    },
 }
 
 
