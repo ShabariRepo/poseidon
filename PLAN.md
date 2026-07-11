@@ -117,6 +117,22 @@ haze, parallax dunes + derrick silhouette, drifting dust, heat shimmer, rolling
 tumbleweed). All reduced-motion safe. More skins are cheap now: palette block +
 scene builder.
 
+**v0.5 — the product cut ✅ (shipped 2026-07-11):** unified Run object model
+(chat/background/scheduled/subagent as one tree), teams (member profiles,
+shared projects, Project pulse handoff, project_status), background tasks,
+automatic context compaction, session progress notes, auto/manual checkpoints
+with review + rewind, Pipeline pane (live run-tree diagram + drill-down event
+timelines), Sessions drawer, Team/Memory/Checkpoints panes, Settings surface
+(engine knobs + always-allow rule management), provider-error resilience
+(retry + malformed-tool-call nudge + text fallback). E2E-proven on a real
+model (Groq llama-3.3): Family Assistant scenario — approval-gated writes,
+trust-dial always-allow enabling unattended background writes, daily schedule,
+teammate status pickup. See ARCHITECTURE.md.
+
+**v0.5.x — server mode:** `poseidon serve` on a shared box (per-member tokens,
+TLS guidance) so teams use one instance from their browsers; Duncan-Lane-scale
+external integrations (gmail/slack connectors as tools).
+
 **v0.4.x — feel alive:** token streaming; diff viewer for edit approvals (side-by-side);
 session list + resume UI; Terminal tab (live run_command output); Ollama autodetect
 in onboarding + friendly connection errors ("is Ollama running?"); markdown

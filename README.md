@@ -59,10 +59,13 @@ convention as every other harness. No new file formats to learn.
 
 ## Status
 
-Early. v0.3: the core loop (chat, file tools, shell with approvals, web fetch,
-cost meter, activity stream) plus task planning, parallel subagents, scheduled
-runs, and persistent file-based memory. See [PLAN.md](PLAN.md) for the roadmap
-(streaming, MCP, model failover, vector-memory A/B).
+v0.5: the core loop (chat, file tools, shell with approvals, web fetch, cost
+meter) plus task planning, parallel subagents, **background tasks**, scheduled
+runs, **team projects** (profiles, shared sessions, handoff notes, status),
+**automatic context compaction**, **checkpoints** (auto + rewind), persistent
+project memory, and a **live Pipeline diagram** of everything running with
+drill-down timelines. Architecture in [ARCHITECTURE.md](ARCHITECTURE.md);
+roadmap in [PLAN.md](PLAN.md).
 
 ## Development
 

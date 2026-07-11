@@ -69,7 +69,9 @@ def engine_settings() -> dict:
     }
 
 
-async def _chat_completion(provider, messages, tools):
+async def _chat_completion(provider, messages, tools, retries=2):
+    """Providers hiccup (rate limits, malformed tool-call generations on
+    smaller models) — retry with backoff before failing the whole turn."""
     headers = {}
     if provider.get("api_key"):
         headers["Authorization"] = f"Bearer {provider['api_key']}"
@@ -77,13 +79,18 @@ async def _chat_completion(provider, messages, tools):
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"
-    async with httpx.AsyncClient(timeout=180) as client:
-        r = await client.post(
-            provider["base_url"].rstrip("/") + "/chat/completions", json=body, headers=headers
-        )
-    if r.status_code >= 400:
-        raise RuntimeError(f"provider returned {r.status_code}: {r.text[:500]}")
-    return r.json()
+    last = ""
+    for attempt in range(retries + 1):
+        async with httpx.AsyncClient(timeout=180) as client:
+            r = await client.post(
+                provider["base_url"].rstrip("/") + "/chat/completions", json=body, headers=headers
+            )
+        if r.status_code < 400:
+            return r.json()
+        last = f"provider returned {r.status_code}: {r.text[:500]}"
+        if attempt < retries:
+            await asyncio.sleep(0.8 * (attempt + 1) ** 2)
+    raise RuntimeError(last)
 
 
 def _estimate_tokens(messages) -> int:
@@ -165,14 +172,18 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
                                   agent=None, allow_meta=True)
         if not ctx.progress_set and final:
             store.set_progress(session_id, final[:300])
-        if ctx.gated_executed and settings["auto_checkpoint"]:
-            _checkpoint(ctx, messages, label=user_message[:100], auto=True)
-            await emit({"type": "checkpoint_saved", "auto": True})
         err = (final or "")[:800]  # run result = final assistant text
     except Exception as e:  # surface, don't swallow
         status, err = "error", str(e)[:800]
         await emit({"type": "error", "message": err})
     finally:
+        # checkpoint even on error turns: real work may have happened
+        if ctx.gated_executed and engine_settings()["auto_checkpoint"]:
+            try:
+                _checkpoint(ctx, messages, label=user_message[:100], auto=True)
+                await emit({"type": "checkpoint_saved", "auto": True})
+            except Exception:
+                pass
         store.save_messages(session_id, messages)
         await emit({"type": "turn_complete"})
         runmgr.finish(project["id"], session_id, run_id, status, err)
@@ -216,11 +227,33 @@ def _checkpoint(ctx, messages, label, auto):
     )
 
 
+_MALFORMED_MARKERS = ("Failed to call a function", "failed_generation", "tool_use_failed", "tool call validation")
+
+
 async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> str:
     schemas = tool_schemas() + (META_SCHEMAS if allow_meta else [])
     last_content = ""
+    nudges = 0
     for _ in range(max_iter):
-        data = await _chat_completion(provider, messages, schemas)
+        try:
+            data = await _chat_completion(provider, messages, schemas)
+        except RuntimeError as e:
+            if any(m in str(e) for m in _MALFORMED_MARKERS):
+                nudges += 1
+                if nudges <= 2:
+                    # the model generated a malformed tool call; change the
+                    # context so it doesn't reproduce it verbatim
+                    messages.append({"role": "user", "content": "[harness] Your last reply contained a malformed tool call. Reply again — one valid tool call at a time, or plain text."})
+                    continue
+                # final fallback: text-only completion so the turn ends usefully
+                data = await _chat_completion(provider, messages, tools=None)
+                msg = data["choices"][0]["message"]
+                messages.append(msg)
+                if msg.get("content"):
+                    last_content = msg["content"]
+                    await ctx.emit({"type": "assistant_message", "content": msg["content"], "agent": agent})
+                break
+            raise
         usd, priced = compute_cost(provider["model"], data.get("usage"))
         ctx.store.add_usage(ctx.session_id, usd, priced, data.get("usage"))
         ctx.store.add_run_cost(ctx.run_id, usd)
