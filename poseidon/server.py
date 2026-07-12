@@ -55,6 +55,8 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
     @app.on_event("startup")
     async def _start_scheduler():
         runmgr.spawn(scheduler.loop())
+        from . import mcp
+        runmgr.spawn(mcp.get_manager().start_all())
 
     @app.middleware("http")
     async def access_guard(request: Request, call_next):
@@ -127,6 +129,24 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         save_config(cfg)
         return {"ok": True, "engine": engine_settings(),
                 "approval_mode": cfg.get("approvals", {}).get("mode", "careful")}
+
+    @app.post("/api/settings/mcp")
+    async def set_mcp(body: dict):
+        servers = body.get("servers")
+        if not isinstance(servers, dict):
+            raise HTTPException(422, "servers must be an object of {name: {command, args, env}}")
+        cfg = load_config()
+        cfg["mcp_servers"] = servers
+        save_config(cfg)
+        from . import mcp
+        await mcp.get_manager().start_all()
+        return {"ok": True, "status": mcp.get_manager().status()}
+
+    @app.get("/api/settings/mcp")
+    async def get_mcp():
+        from . import mcp
+        return {"servers": load_config().get("mcp_servers") or {},
+                "status": mcp.get_manager().status()}
 
     @app.post("/api/settings/integrations")
     async def set_integrations(body: dict):

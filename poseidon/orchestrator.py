@@ -303,7 +303,8 @@ _MALFORMED_MARKERS = ("Failed to call a function", "failed_generation", "tool_us
 
 
 async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> str:
-    schemas = tool_schemas() + (META_SCHEMAS if allow_meta else [])
+    from . import mcp
+    schemas = tool_schemas() + (META_SCHEMAS if allow_meta else []) + mcp.get_manager().schemas()
     last_content = ""
     nudges = 0
     # stream deltas to the UI in small batches
@@ -400,7 +401,16 @@ async def _dispatch(ctx, provider, tc, agent, allow_meta) -> dict:
     except json.JSONDecodeError:
         args = {}
     await ctx.emit({"type": "tool_call", "name": name, "args": args, "agent": agent})
-    if name in META_NAMES:
+    if name.startswith("mcp__"):
+        decision = await ctx.broker.request(
+            ctx.emit, "mcp", name.replace("mcp__", "", 1).replace("__", "."),
+            json.dumps(args)[:1500], unattended=ctx.unattended)
+        if decision["approved"]:
+            from . import mcp
+            result = await mcp.get_manager().call(name, args)
+        else:
+            result = {"error": "approval denied"}
+    elif name in META_NAMES:
         result = await _exec_meta(ctx, provider, name, args) if allow_meta else {"error": "meta tools are main-agent only"}
     else:
         result = await _execute_tool(ctx, name, args)
