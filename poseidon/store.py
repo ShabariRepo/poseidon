@@ -86,6 +86,8 @@ class Store:
         mcols = {r[1] for r in c.execute("PRAGMA table_info(members)")}
         if "token" not in mcols:
             c.execute("ALTER TABLE members ADD COLUMN token TEXT")
+        if "email" not in mcols:
+            c.execute("ALTER TABLE members ADD COLUMN email TEXT DEFAULT ''")
         for r in c.execute("SELECT id FROM members WHERE token IS NULL").fetchall():
             c.execute("UPDATE members SET token=? WHERE id=?", (uuid.uuid4().hex, r[0]))
         # sessions table upgrades (pre-0.5 databases)
@@ -158,16 +160,22 @@ class Store:
             out.append(d)
         return out
 
-    def create_member(self, name: str, color: str) -> dict:
+    def create_member(self, name: str, color: str, email: str = "") -> dict:
         mid = _id()
         self._exec(
-            "INSERT INTO members (id, name, color, created, token) VALUES (?,?,?,?,?)",
-            (mid, name.strip(), color, _now(), uuid.uuid4().hex),
+            "INSERT INTO members (id, name, color, created, token, email) VALUES (?,?,?,?,?,?)",
+            (mid, name.strip(), color, _now(), uuid.uuid4().hex, email.strip().lower()),
         )
-        return {"id": mid, "name": name.strip(), "color": color}
+        return {"id": mid, "name": name.strip(), "color": color, "email": email.strip().lower()}
+
+    def member_by_email(self, email: str) -> dict | None:
+        r = self._db.execute(
+            "SELECT id, name, color, email FROM members WHERE LOWER(email)=LOWER(?)",
+            (email.strip(),)).fetchone()
+        return dict(r) if r else None
 
     def list_members(self) -> list:
-        return [dict(r) for r in self._db.execute("SELECT id, name, color, created FROM members ORDER BY created")]
+        return [dict(r) for r in self._db.execute("SELECT id, name, color, email, created FROM members ORDER BY created")]
 
     def member_tokens(self) -> list:
         return [dict(r) for r in self._db.execute("SELECT id, name, token FROM members ORDER BY created")]

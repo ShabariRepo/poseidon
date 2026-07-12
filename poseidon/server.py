@@ -91,6 +91,9 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             "presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in PRESETS.items()},
             "approval_rules": cfg.get("approvals", {}).get("rules", []),
             "approval_mode": cfg.get("approvals", {}).get("mode", "careful"),
+            "account": {"linked": bool((cfg.get("account") or {}).get("key")),
+                        "email": (cfg.get("account") or {}).get("email", ""),
+                        "name": (cfg.get("account") or {}).get("name", "")},
             "engine": engine_settings(),
             "integrations": {
                 "gmail": {"email": (cfg.get("integrations", {}).get("gmail", {}) or {}).get("email", ""),
@@ -187,14 +190,70 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             raise HTTPException(422, f"not a directory: {path}")
         return store.create_project(name, str(path.resolve()), member_id)
 
+    async def _bonito_account():
+        acct = load_config().get("account") or {}
+        return acct if acct.get("key") else None
+
+    @app.post("/api/account/link")
+    async def link_account(body: dict):
+        """Sign in with the pk- key from the Bonito site's Poseidon page."""
+        import httpx
+        key = (body.get("key") or "").strip()
+        if not key.startswith("pk-"):
+            raise HTTPException(422, "that doesn't look like a Poseidon key (pk-…)")
+        cfg = load_config()
+        url = (body.get("bonito_url") or cfg.get("account", {}).get("bonito_url")
+               or "https://api.getbonito.com").rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(f"{url}/api/poseidon/resolve", json={"key": key})
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"couldn't reach Bonito: {e}")
+        if r.status_code == 404:
+            raise HTTPException(401, "unknown or revoked key")
+        if r.status_code >= 400:
+            raise HTTPException(502, f"Bonito said {r.status_code}")
+        ident = r.json()
+        cfg["account"] = {"bonito_url": url, "key": key,
+                          "email": ident["email"], "name": ident["name"]}
+        save_config(cfg)
+        member = store.member_by_email(ident["email"])
+        if not member:
+            m = store.create_member(ident["name"], "#0f7fa8", email=ident["email"])
+            for p in store.list_projects():
+                store.add_membership(p["id"], m["id"])
+            member = m
+        return {"ok": True, "name": ident["name"], "email": ident["email"],
+                "member_id": member["id"]}
+
     @app.post("/api/members")
     async def create_member(body: dict):
         name = (body.get("name") or "").strip()
-        if not name:
-            raise HTTPException(422, "name required")
+        email = (body.get("email") or "").strip()
         color = body.get("color") or "#0f7fa8"
+        if email and "@" in email and not name:
+            # add teammate by email via the Bonito directory
+            acct = await _bonito_account()
+            if not acct:
+                raise HTTPException(422, "link your Bonito account in Settings to add teammates by email")
+            import httpx
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    r = await client.get(f"{acct['bonito_url'].rstrip('/')}/api/poseidon/lookup",
+                                         params={"email": email},
+                                         headers={"X-Poseidon-Key": acct["key"]})
+            except httpx.HTTPError as e:
+                raise HTTPException(502, f"couldn't reach Bonito: {e}")
+            if r.status_code >= 400 or not r.json().get("found"):
+                raise HTTPException(404, f"no Bonito user with email {email}")
+            name = r.json()["name"]
+        if not name:
+            raise HTTPException(422, "name (or a Bonito email) required")
+        existing = store.member_by_email(email) if email else None
+        if existing:
+            return existing
         try:
-            m = store.create_member(name, color)
+            m = store.create_member(name, color, email=email)
         except Exception:
             raise HTTPException(409, "member name already exists")
         for p in store.list_projects():

@@ -28,6 +28,7 @@ async function init() {
   fillPresets(s);
   fillEngine();
   fillIntegrations(s);
+  fillAccount(s);
   fillRules();
   if (!s.configured) openSettings();
   await newSession();
@@ -76,11 +77,12 @@ function fillMemberSelect() {
   sel.value = state.memberId;
   sel.onchange = async () => {
     if (sel.value === "__new") {
-      const name = prompt("Teammate name:");
+      const who = prompt("Teammate name — or their Bonito email to add from your team directory:");
       sel.value = state.memberId;
-      if (!name) return;
-      const r = await fetch("/api/members", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, color: randColor() }) });
-      if (!r.ok) return alert("Could not add (name taken?)");
+      if (!who) return;
+      const payload = who.includes("@") ? { email: who } : { name: who };
+      const r = await fetch("/api/members", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, color: randColor() }) });
+      if (!r.ok) return alert((await r.json().catch(() => ({}))).detail || "Could not add");
       const m = await r.json();
       state.members.push(m);
       fillMemberSelect();
@@ -864,6 +866,24 @@ function fillEngine() {
   $("eng-ckpt").checked = !!state.engine.auto_checkpoint;
   if (state.approvalMode) $("eng-mode").value = state.approvalMode;
 }
+
+function fillAccount(s) {
+  const a = s.account || {};
+  $("acct-status").textContent = a.linked
+    ? `Linked: ${a.name} <${a.email}> — teammates can add you by email.`
+    : "Not linked — get your free key at getbonito.com → Poseidon.";
+}
+$("acct-link").onclick = async () => {
+  const key = $("acct-key").value.trim();
+  if (!key) return;
+  const r = await fetch("/api/account/link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { $("acct-status").textContent = d.detail || "link failed"; return; }
+  $("acct-status").textContent = `Linked: ${d.name} <${d.email}>`;
+  $("acct-key").value = "";
+  const s2 = await fetch("/api/state").then((x) => x.json());
+  state.members = s2.members; fillMemberSelect();
+};
 
 function fillIntegrations(s) {
   const i = s.integrations || {};

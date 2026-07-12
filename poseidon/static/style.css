@@ -535,6 +535,47 @@ dialog h3 { margin: 16px 0 4px; font-size: .95rem; }
 .rules-list { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
 .rule-row { display: flex; justify-content: space-between; align-items: center; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: .78rem; }
 
+/* ---- professional refinement pass ---- */
+body { letter-spacing: -0.011em; -webkit-font-smoothing: antialiased; }
+button {
+  padding: 8px 14px; font-size: .82rem; font-weight: 600; letter-spacing: 0;
+  border-radius: 10px; transition: background .13s, box-shadow .13s, border-color .13s, color .13s;
+}
+button.ghost { border-color: color-mix(in srgb, var(--border) 80%, transparent); }
+button.ghost:hover { border-color: var(--border); }
+button.mini { padding: 4px 10px; font-size: .74rem; }
+:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+.chip-select {
+  background: var(--bg-solid); box-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+  font-weight: 500; padding: 6px 9px; border-radius: 10px;
+}
+.cost { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); }
+header { padding: 9px 18px; }
+.brand strong { font-weight: 700; letter-spacing: -0.02em; }
+
+/* dock: monochrome at rest, color when active/hovered */
+.tab .ico { filter: grayscale(1) opacity(.62); transition: filter .15s; }
+.tab:hover .ico, .tab.active .ico { filter: none; }
+.tab .lbl { font-weight: 500; }
+
+/* cards: quieter chrome, stronger hierarchy */
+.schedule-card { padding: 13px 15px; }
+.schedule-card .when { font-size: .86rem; font-weight: 650; letter-spacing: -0.01em; }
+.schedule-card .meta, .bcard-meta, .session-info .m { font-size: .74rem; }
+.schedule-card .last { font-size: .78rem; line-height: 1.45; }
+.bcol { background: color-mix(in srgb, var(--bg-raised) 55%, transparent); border-style: none; box-shadow: none; padding: 10px; }
+.bcol-head { font-size: .68rem; letter-spacing: .8px; }
+.bcard { padding: 11px 12px; }
+.bcard-title { font-size: .85rem; letter-spacing: -0.01em; }
+.pnode .lbl { letter-spacing: -0.01em; }
+.badge { font-weight: 600; letter-spacing: .1px; }
+.feed-empty { line-height: 1.5; max-width: 46ch; }
+dialog h2 { letter-spacing: -0.02em; }
+dialog h3 { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .8px; margin: 20px 0 6px; }
+.msg { line-height: 1.5; font-size: .92rem; }
+#chat-form { padding: 12px 16px 14px; }
+#send-btn { padding: 9px 20px; }
+
 /* ---- contemporary card language (airbnb/mac cues) ---- */
 .schedule-card, .bcard, .pnode, .bcol {
   border-radius: 16px;

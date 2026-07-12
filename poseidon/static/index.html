@@ -8,7 +8,7 @@
   <link rel="manifest" href="/static/manifest.json" />
   <meta name="theme-color" content="#0f7fa8" />
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
-  <link rel="stylesheet" href="/static/style.css?v=070" />
+  <link rel="stylesheet" href="/static/style.css?v=080" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
@@ -125,6 +125,10 @@
         </select>
       </label>
     </div>
+    <h3>Bonito account</h3>
+    <p class="muted" id="acct-status">Not linked — get your free key at getbonito.com → Poseidon.</p>
+    <label>Poseidon key <input id="acct-key" type="password" placeholder="pk-…" /></label>
+    <button class="ghost mini" id="acct-link" type="button">Link account</button>
     <h3>Integrations</h3>
     <div class="settings-grid">
       <label>Gmail address <input id="int-gmail-email" placeholder="you@gmail.com" /></label>
@@ -153,6 +157,6 @@
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=070"></script>
+  <script src="/static/app.js?v=080"></script>
 </body>
 </html>

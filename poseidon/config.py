@@ -53,6 +53,11 @@ DEFAULT_CONFIG = {
         "auto_checkpoint": True,   # checkpoint after write/run turns
         "max_iterations": 25,      # tool-loop cap per turn
     },
+    "account": {
+        # link to a Bonito account (site shows your pk- key on the Poseidon page)
+        "bonito_url": "https://api.getbonito.com",
+        "key": "", "email": "", "name": "",
+    },
     "integrations": {
         "gmail": {"email": "", "app_password": ""},   # myaccount.google.com/apppasswords
         "slack": {"bot_token": "", "default_channel": ""},
