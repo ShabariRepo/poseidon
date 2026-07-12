@@ -19,6 +19,7 @@ from . import memory as memory_store
 from .config import load_config
 from .costs import compute_cost
 from .tools import TOOLS, tool_schemas
+from .versions import VersionStore
 
 MAX_TOOL_RESULT = 12_000
 SUB_MAX_ITERATIONS = 15
@@ -30,6 +31,7 @@ Delegate self-contained chunks with run_subagent (parallel when called together)
 Use schedule_task for anything recurring or "later". Unattended runs can only write/run what an "always allow" rule already covers.
 You have persistent project memory shared with the team — it's a graph: save durable facts with save_memory and connect related ones with [[wikilinks]] in the content; reading a memory also returns what it links to. Check the memory index before asking things you should know.
 This is a shared team project. The Project pulse below shows what teammates are doing; use project_status for detail when asked "what's the status" or "where did X leave off".
+The project has a shared work Board (add_work_item / update_work_item / list_work_items): when the team plans or assigns work, put it on the board; keep statuses honest (todo → doing → review → done); move your finished work to "review" so a teammate can check it. Every file change is auto-versioned — anyone can see what changed and restore an older version, so edit fearlessly.
 When you finish significant work, call set_progress with a one-line handoff note, and save_checkpoint before risky changes.
 Reads are instant; writes and commands ask for approval — that's normal, don't apologize for it.
 When you finish, summarize what changed in plain language."""
@@ -53,9 +55,13 @@ META_SCHEMAS = [
     {"type": "function", "function": {"name": "cancel_schedule", "description": "Cancel a scheduled task by id.", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
     {"type": "function", "function": {"name": "save_checkpoint", "description": "Snapshot this session (conversation + progress + touched files) so work can be reviewed or rewound.", "parameters": {"type": "object", "properties": {"label": {"type": "string"}}, "required": ["label"]}}},
     {"type": "function", "function": {"name": "set_progress", "description": "Set the session's one-line progress/handoff note (what's done, what's next). Teammates see this.", "parameters": {"type": "object", "properties": {"note": {"type": "string"}}, "required": ["note"]}}},
+    {"type": "function", "function": {"name": "add_work_item", "description": "Add a card to the team's work board.", "parameters": {"type": "object", "properties": {"title": {"type": "string"}, "notes": {"type": "string"}, "assignee": {"type": "string", "description": "member name, 'me', or 'poseidon' for yourself"}, "status": {"type": "string", "enum": ["todo", "doing", "review", "done"]}, "files": {"type": "array", "items": {"type": "string"}, "description": "related file paths"}}, "required": ["title"]}}},
+    {"type": "function", "function": {"name": "update_work_item", "description": "Update a board card: move status, edit notes, reassign, attach files.", "parameters": {"type": "object", "properties": {"id": {"type": "string"}, "status": {"type": "string", "enum": ["todo", "doing", "review", "done"]}, "notes": {"type": "string"}, "assignee": {"type": "string"}, "files": {"type": "array", "items": {"type": "string"}}}, "required": ["id"]}}},
+    {"type": "function", "function": {"name": "list_work_items", "description": "List the team's work board (ids, titles, statuses, assignees).", "parameters": {"type": "object", "properties": {}}}},
 ]
 META_NAMES = {s["function"]["name"] for s in META_SCHEMAS}
-GATED_TOOLS = {"write_file", "edit_file", "run_command"}
+GATED_TOOLS = {"write_file", "edit_file", "run_command", "edit_spreadsheet"}
+VERSIONED_TOOLS = {"write_file", "edit_file", "edit_spreadsheet"}
 
 
 def engine_settings() -> dict:
@@ -142,6 +148,8 @@ class TurnContext:
         self.touched_files: set[str] = set()
         self.gated_executed = False
         self.progress_set = False
+        self.label = ""
+        self.versions = VersionStore(store)
 
 
 async def run_turn(project, store, runmgr, broker, scheduler, session_id, member_id,
@@ -158,6 +166,7 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
 
     ctx = TurnContext(project, store, runmgr, broker, scheduler, session_id, member_id,
                       run_id, emit, unattended)
+    ctx.label = label
     messages = store.get_messages(session_id)
     if not messages:
         messages.append({"role": "system", "content": _build_system_prompt(project, store)})
@@ -311,11 +320,21 @@ async def _execute_tool(ctx, name, args) -> dict:
                       "timed out" if decision.get("timeout") else "denied by user")
             return {"error": f"approval {reason}"}
     try:
+        rel = str(args.get("path") or "")
+        target = (ctx.workdir / rel).resolve() if rel else None
+        # before touching a file, capture any outside edits so nothing is lost
+        if name in VERSIONED_TOOLS and target and target.is_file():
+            ctx.versions.capture_external(ctx.project["id"], target, rel)
         result = await spec["handler"](args, {"workdir": ctx.workdir, "project_id": ctx.project["id"]})
         if name in GATED_TOOLS and "error" not in result:
             ctx.gated_executed = True
-            if args.get("path"):
-                ctx.touched_files.add(str((ctx.workdir / args["path"]).resolve()))
+            if target:
+                ctx.touched_files.add(str(target))
+        if name in VERSIONED_TOOLS and "error" not in result and target:
+            vid = ctx.versions.snapshot(ctx.project["id"], target, rel, "agent",
+                                        ctx.member_id, ctx.run_id, ctx.label)
+            if vid:
+                await ctx.emit({"type": "version_saved", "path": rel})
         return result
     except Exception as e:
         return {"error": str(e)[:500]}
@@ -376,6 +395,9 @@ async def _exec_meta(ctx, provider, name, args) -> dict:
         await ctx.emit({"type": "progress_update", "note": note[:300]})
         return {"ok": True}
 
+    if name in ("add_work_item", "update_work_item", "list_work_items"):
+        return await _exec_board(ctx, name, args)
+
     scheduler = ctx.scheduler
     if scheduler is None:
         return {"error": "scheduler unavailable in this context"}
@@ -400,6 +422,55 @@ async def _exec_meta(ctx, provider, name, args) -> dict:
     if name == "cancel_schedule":
         return {"ok": True} if scheduler.cancel(args.get("id", "")) else {"error": "no schedule with that id"}
     return {"error": f"unknown meta tool: {name}"}
+
+
+def _resolve_assignee(ctx, name):
+    if not name:
+        return "", ""
+    n = name.strip().lower()
+    if n in ("me", "myself"):
+        return "member", ctx.member_id
+    if n in ("poseidon", "agent", "ai", "you"):
+        return "agent", ""
+    m = ctx.store.member_by_name(name)
+    return ("member", m["id"]) if m else ("", "")
+
+
+async def _exec_board(ctx, name, args) -> dict:
+    store = ctx.store
+    if name == "list_work_items":
+        items = store.list_work_items(ctx.project["id"])
+        return {"items": [{k: i[k] for k in ("id", "title", "status", "notes")}
+                          | {"assignee": i.get("assignee_name") or ("Poseidon" if i["assignee_kind"] == "agent" else "")}
+                          for i in items]}
+    if name == "add_work_item":
+        title = (args.get("title") or "").strip()
+        if not title:
+            return {"error": "title required"}
+        kind, aid = _resolve_assignee(ctx, args.get("assignee", ""))
+        status = args.get("status") if args.get("status") in ("todo", "doing", "review", "done") else "todo"
+        item = store.add_work_item(ctx.project["id"], title, args.get("notes", ""),
+                                   status, kind, aid, ctx.member_id,
+                                   files=args.get("files") or [], run_id=ctx.run_id)
+        await ctx.emit({"type": "work_update"})
+        return {"ok": True, "id": item["id"], "status": item["status"]}
+    if name == "update_work_item":
+        fields = {}
+        if args.get("status") in ("todo", "doing", "review", "done"):
+            fields["status"] = args["status"]
+        if args.get("notes") is not None:
+            fields["notes"] = args["notes"][:2000]
+        if args.get("files") is not None:
+            fields["files"] = args["files"]
+        if args.get("assignee"):
+            kind, aid = _resolve_assignee(ctx, args["assignee"])
+            fields["assignee_kind"], fields["assignee_id"] = kind, aid
+        item = store.update_work_item(args.get("id", ""), **fields)
+        if not item:
+            return {"error": "no card with that id"}
+        await ctx.emit({"type": "work_update"})
+        return {"ok": True, "id": item["id"], "status": item["status"]}
+    return {"error": "unknown board action"}
 
 
 async def _run_subagent(ctx, provider, args) -> dict:

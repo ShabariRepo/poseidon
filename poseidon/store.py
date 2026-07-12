@@ -61,6 +61,19 @@ class Store:
                 type TEXT, payload TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_events_run ON run_events (run_id, id);
+            CREATE TABLE IF NOT EXISTS file_versions (
+                id TEXT PRIMARY KEY, project_id TEXT, path TEXT, hash TEXT,
+                size INTEGER, ts REAL, author_kind TEXT, author_id TEXT,
+                run_id TEXT, label TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_fv_path ON file_versions (project_id, path, ts);
+            CREATE TABLE IF NOT EXISTS work_items (
+                id TEXT PRIMARY KEY, project_id TEXT, title TEXT, notes TEXT DEFAULT '',
+                status TEXT DEFAULT 'todo', assignee_kind TEXT DEFAULT '',
+                assignee_id TEXT DEFAULT '', created_by TEXT, files TEXT DEFAULT '[]',
+                run_id TEXT DEFAULT '', created REAL, updated REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_work_project ON work_items (project_id, updated);
             CREATE TABLE IF NOT EXISTS checkpoints (
                 id TEXT PRIMARY KEY, session_id TEXT, project_id TEXT,
                 member_id TEXT, ts REAL, label TEXT, progress TEXT DEFAULT '',
@@ -339,6 +352,111 @@ class Store:
         d["messages"] = json.loads(d["messages"])
         d["files"] = json.loads(d["files"])
         return d
+
+    # ---------- file versions ----------
+    def add_file_version(self, project_id, path, hash_, size, author_kind, author_id,
+                         run_id, label) -> str:
+        vid = _id()
+        self._exec(
+            """INSERT INTO file_versions (id, project_id, path, hash, size, ts,
+               author_kind, author_id, run_id, label) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (vid, project_id, path, hash_, size, _now(), author_kind, author_id,
+             run_id or "", (label or "")[:160]),
+        )
+        return vid
+
+    def latest_version(self, project_id, path) -> dict | None:
+        r = self._db.execute(
+            "SELECT * FROM file_versions WHERE project_id=? AND path=? ORDER BY ts DESC LIMIT 1",
+            (project_id, path)).fetchone()
+        return dict(r) if r else None
+
+    def file_history(self, project_id, path, limit=40) -> list:
+        rows = self._db.execute(
+            """SELECT v.*, m.name AS author_name, m.color AS author_color
+               FROM file_versions v LEFT JOIN members m ON m.id=v.author_id
+               WHERE v.project_id=? AND v.path=? ORDER BY v.ts DESC LIMIT ?""",
+            (project_id, path, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_version(self, vid) -> dict | None:
+        r = self._db.execute("SELECT * FROM file_versions WHERE id=?", (vid,)).fetchone()
+        return dict(r) if r else None
+
+    def prev_version(self, version: dict) -> dict | None:
+        r = self._db.execute(
+            """SELECT * FROM file_versions WHERE project_id=? AND path=? AND ts<?
+               ORDER BY ts DESC LIMIT 1""",
+            (version["project_id"], version["path"], version["ts"])).fetchone()
+        return dict(r) if r else None
+
+    def tracked_paths(self, project_id) -> dict:
+        rows = self._db.execute(
+            """SELECT path, COUNT(*) AS n, MAX(ts) AS latest FROM file_versions
+               WHERE project_id=? GROUP BY path""", (project_id,)).fetchall()
+        return {r["path"]: {"versions": r["n"], "latest": r["latest"]} for r in rows}
+
+    # ---------- work board ----------
+    def add_work_item(self, project_id, title, notes, status, assignee_kind,
+                      assignee_id, created_by, files=None, run_id="") -> dict:
+        wid = _id()
+        self._exec(
+            """INSERT INTO work_items (id, project_id, title, notes, status,
+               assignee_kind, assignee_id, created_by, files, run_id, created, updated)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (wid, project_id, title[:160], (notes or "")[:2000], status, assignee_kind,
+             assignee_id, created_by, json.dumps(files or []), run_id, _now(), _now()),
+        )
+        return self.get_work_item(wid)
+
+    def update_work_item(self, wid, **fields) -> dict | None:
+        allowed = {"title", "notes", "status", "assignee_kind", "assignee_id", "files", "run_id"}
+        sets, vals = [], []
+        for k, v in fields.items():
+            if k in allowed and v is not None:
+                sets.append(f"{k}=?")
+                vals.append(json.dumps(v) if k == "files" else v)
+        if not sets:
+            return self.get_work_item(wid)
+        vals += [_now(), wid]
+        self._exec(f"UPDATE work_items SET {', '.join(sets)}, updated=? WHERE id=?", vals)
+        return self.get_work_item(wid)
+
+    def get_work_item(self, wid) -> dict | None:
+        r = self._db.execute(
+            """SELECT w.*, m.name AS assignee_name, m.color AS assignee_color,
+                      c.name AS creator_name
+               FROM work_items w LEFT JOIN members m ON m.id=w.assignee_id
+               LEFT JOIN members c ON c.id=w.created_by WHERE w.id=?""", (wid,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        d["files"] = json.loads(d["files"] or "[]")
+        return d
+
+    def list_work_items(self, project_id) -> list:
+        rows = self._db.execute(
+            """SELECT w.*, m.name AS assignee_name, m.color AS assignee_color,
+                      c.name AS creator_name
+               FROM work_items w LEFT JOIN members m ON m.id=w.assignee_id
+               LEFT JOIN members c ON c.id=w.created_by
+               WHERE w.project_id=? ORDER BY w.updated DESC LIMIT 200""",
+            (project_id,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["files"] = json.loads(d["files"] or "[]")
+            out.append(d)
+        return out
+
+    def delete_work_item(self, wid) -> bool:
+        return self._exec("DELETE FROM work_items WHERE id=?", (wid,)).rowcount > 0
+
+    def member_by_name(self, name: str) -> dict | None:
+        r = self._db.execute(
+            "SELECT id, name, color FROM members WHERE LOWER(name)=LOWER(?)", (name.strip(),)
+        ).fetchone()
+        return dict(r) if r else None
 
     def total_cost(self) -> float:
         r = self._db.execute("SELECT COALESCE(SUM(cost),0) FROM sessions").fetchone()

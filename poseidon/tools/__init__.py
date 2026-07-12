@@ -5,7 +5,7 @@ approval — a subject() that extracts what the user is being asked to approve.
 ctx is {"workdir": Path}.
 """
 from .. import memory as memory_store
-from . import comms, files, shell, web
+from . import comms, docs, files, shell, web
 
 TOOLS = {}
 
@@ -153,6 +153,27 @@ _register(
     _forget_memory,
 )
 
+
+_register(
+    "read_document",
+    "Read an office document: .xlsx (sheets as tables), .docx (text), .pdf (text).",
+    {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    docs.read_document,
+)
+
+_register(
+    "edit_spreadsheet",
+    "Edit or create an .xlsx spreadsheet: set cells and/or append rows.",
+    {"type": "object", "properties": {
+        "path": {"type": "string"},
+        "sheet": {"type": "string", "description": "sheet name (default: active)"},
+        "updates": {"type": "array", "items": {"type": "object", "properties": {"cell": {"type": "string"}, "value": {}}, "required": ["cell"]}},
+        "append_rows": {"type": "array", "items": {"type": "array", "items": {}}}},
+     "required": ["path"]},
+    docs.edit_spreadsheet,
+    needs_approval=True,
+    subject=lambda a: (a.get("path", ""), f"{len(a.get('updates') or [])} cell updates, {len(a.get('append_rows') or [])} new rows"),
+)
 
 _register(
     "list_emails",

@@ -129,6 +129,21 @@ model (Groq llama-3.3): Family Assistant scenario — approval-gated writes,
 trust-dial always-allow enabling unattended background writes, daily schedule,
 teammate status pickup. See ARCHITECTURE.md.
 
+**v0.6 — teamwork layer ✅ (shipped 2026-07-12):** the "git for non-developers"
+cut. (1) **File versions**: every agent write/edit auto-snapshots (who, when,
+and *which ask caused it*); outside edits captured before overwrites so nothing
+is ever lost; Files pane shows 🕘 chips → history with friendly colored
+"What changed" diffs and one-click Restore (restore itself is versioned).
+Content-addressed blob store + SQLite metadata. (2) **Work Board** (default
+pane): todo/doing/review/done kanban the AGENT keeps updated via
+add/update/list_work_items — cards carry member or 🔱 Poseidon avatars, linked
+files, notes; humans add/move/delete in UI; "review" column = check each
+other's work. (3) **Office files**: read_document (xlsx/docx/pdf) +
+edit_spreadsheet (gated + versioned) — the real Drive-and-spreadsheets
+workload. Google Drive strategy: point the project workdir at a Drive for
+desktop synced folder — versioning/board layer on top, zero OAuth.
+(4) scripts/install.sh one-liner (activates once published to PyPI).
+
 **v0.5.x — server mode:** `poseidon serve` on a shared box (per-member tokens,
 TLS guidance) so teams use one instance from their browsers; Duncan-Lane-scale
 external integrations (gmail/slack connectors as tools).

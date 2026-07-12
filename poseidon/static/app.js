@@ -32,7 +32,7 @@ async function init() {
   if (!s.configured) openSettings();
   await newSession();
   loadFiles(".");
-  refreshPipeline();
+  loadBoard();
   $("chat-input").focus();
 }
 
@@ -197,6 +197,13 @@ function handleEvent(ev) {
     case "approval_required": if (mine) { setThinking(false); renderApproval(ev); } break;
     case "cost_update": if (mine) updateCost(ev); break;
     case "checkpoint_saved": if (mine) addChip(`📍 checkpoint saved${ev.auto ? " (auto)" : ""}`); break;
+    case "work_update":
+      if (document.querySelector(".tab.active")?.dataset.tab === "board") loadBoard();
+      break;
+    case "version_saved":
+      if (mine) addChip(`🕘 version saved: ${ev.path}`);
+      if (document.querySelector(".tab.active")?.dataset.tab === "files") loadFiles(state.currentPath);
+      break;
     case "progress_update": if (mine) addProgressChip(ev.note); break;
     case "compacted": if (mine) addChip(`🗜 context compacted (${ev.dropped} messages summarized)`); break;
     case "error": if (mine) { setThinking(false); addMsg("error", ev.message); } break;
@@ -392,6 +399,114 @@ async function drillRun(rid) {
   $("drill-overlay").hidden = false;
 }
 $("drill-close").onclick = () => ($("drill-overlay").hidden = true);
+
+/* ---------- work board ---------- */
+const BOARD_COLS = [["todo", "To do"], ["doing", "In progress"], ["review", "In review"], ["done", "Done"]];
+
+async function loadBoard() {
+  const { items } = await fetch(`/api/work?project_id=${state.projectId}`).then((r) => r.json());
+  const board = $("board");
+  board.innerHTML = "";
+  for (const [key, label] of BOARD_COLS) {
+    const col = document.createElement("div");
+    col.className = "bcol";
+    const colItems = items.filter((i) => i.status === key);
+    col.innerHTML = `<div class="bcol-head">${label} <span class="bcount">${colItems.length}</span>
+      <button class="ghost mini badd" title="Add card">＋</button></div>`;
+    col.querySelector(".badd").onclick = async () => {
+      const title = prompt(`New card in "${label}":`);
+      if (!title) return;
+      await fetch("/api/work", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: state.projectId, title, status: key, member_id: state.memberId }) });
+      loadBoard();
+    };
+    for (const item of colItems) col.appendChild(boardCard(item, key));
+    board.appendChild(col);
+  }
+}
+
+function boardCard(item, key) {
+  const card = document.createElement("div");
+  card.className = "bcard";
+  const who = item.assignee_kind === "agent"
+    ? '<span class="avatar tiny" style="background:#0f7fa8" title="Poseidon">🔱</span>'
+    : item.assignee_name
+      ? `<span class="avatar tiny" style="background:${esc(item.assignee_color || "#888")}" title="${esc(item.assignee_name)}">${esc(item.assignee_name[0].toUpperCase())}</span>`
+      : "";
+  const files = (item.files || []).length ? `<span class="badge">📄 ${item.files.length}</span>` : "";
+  card.innerHTML = `<div class="bcard-title">${esc(item.title)}</div>
+    <div class="bcard-meta">${who}${files}
+      <span class="bmove"><button class="ghost mini bprev" title="Move back">◀</button><button class="ghost mini bnext" title="Move forward">▶</button></span>
+    </div>`;
+  const ki = BOARD_COLS.findIndex(([k]) => k === key);
+  const move = async (dir) => {
+    const next = BOARD_COLS[ki + dir]?.[0];
+    if (!next) return;
+    await fetch(`/api/work/${item.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: next }) });
+    loadBoard();
+  };
+  card.querySelector(".bprev").onclick = (e) => { e.stopPropagation(); move(-1); };
+  card.querySelector(".bnext").onclick = (e) => { e.stopPropagation(); move(1); };
+  card.onclick = () => {
+    $("drill-title").textContent = `🗂 ${item.title}`;
+    $("drill-body").innerHTML = `
+      <div class="drill-meta">${esc(item.assignee_kind === "agent" ? "Poseidon" : item.assignee_name || "unassigned")} · updated ${fmtTime(item.updated)} · added by ${esc(item.creator_name || "?")}</div>
+      ${item.notes ? `<pre class="drill-result">${esc(item.notes)}</pre>` : ""}
+      ${(item.files || []).map((f) => `<div class="ev-row"><span class="k">file</span><span class="d">${esc(f)}</span></div>`).join("")}
+      <div class="modal-actions"><button class="ghost mini" id="wdel">Delete card</button></div>`;
+    $("drill-body").querySelector("#wdel").onclick = async () => {
+      if (!confirm("Delete this card?")) return;
+      await fetch(`/api/work/${item.id}?project_id=${state.projectId}`, { method: "DELETE" });
+      $("drill-overlay").hidden = true;
+      loadBoard();
+    };
+    $("drill-overlay").hidden = false;
+  };
+  return card;
+}
+
+/* ---------- file history ("saved versions") ---------- */
+async function showHistory(path) {
+  const { versions } = await fetch(`/api/files/history?path=${encodeURIComponent(path)}&project_id=${state.projectId}`).then((r) => r.json());
+  $("drill-title").textContent = `🕘 ${path}`;
+  const rows = versions.map((v, i) => {
+    const who = v.author_kind === "agent" ? `🔱 Poseidon${v.author_name ? " (for " + esc(v.author_name) + ")" : ""}`
+      : v.author_kind === "external" ? "✏️ outside edit"
+      : `👤 ${esc(v.author_name || "member")}`;
+    return `<div class="vrow" data-vid="${v.id}">
+      <div class="vinfo"><b>${who}</b> · ${fmtTime(v.ts)}${i === 0 ? ' <span class="badge">current</span>' : ""}
+        <div class="meta">${esc(v.label || "")}</div></div>
+      <span class="row-actions">
+        <button class="ghost mini vdiff">What changed</button>
+        <button class="ghost mini vview">View</button>
+        ${i === 0 ? "" : '<button class="ghost mini vrestore">Restore</button>'}
+      </span></div><div class="vdetail" hidden></div>`;
+  }).join("");
+  $("drill-body").innerHTML = rows || '<span class="muted">no versions yet</span>';
+  $("drill-body").querySelectorAll(".vrow").forEach((row) => {
+    const vid = row.dataset.vid;
+    const detail = row.nextElementSibling;
+    row.querySelector(".vdiff").onclick = async () => {
+      const d = await fetch(`/api/versions/${vid}/diff`).then((r) => r.json());
+      detail.hidden = false;
+      detail.innerHTML = d.binary ? '<span class="muted">binary file — no preview</span>'
+        : d.first ? '<span class="muted">first version — everything is new</span>'
+        : d.lines.map((l) => `<div class="dline ${l.t}">${esc(l.s)}</div>`).join("") || '<span class="muted">no changes</span>';
+    };
+    row.querySelector(".vview").onclick = async () => {
+      const v = await fetch(`/api/versions/${vid}`).then((r) => r.json());
+      detail.hidden = false;
+      detail.innerHTML = `<pre class="drill-result">${esc(v.content.slice(0, 4000))}</pre>`;
+    };
+    row.querySelector(".vrestore")?.addEventListener("click", async () => {
+      if (!confirm("Restore this version? The current version stays saved — nothing is lost.")) return;
+      await fetch(`/api/versions/${vid}/restore`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: state.memberId }) });
+      $("drill-overlay").hidden = true;
+      loadFiles(state.currentPath);
+    });
+  });
+  $("drill-overlay").hidden = false;
+}
 
 /* ---------- workspace: tasks ---------- */
 function renderTasks(tasks) {
@@ -615,11 +730,21 @@ async function loadFiles(path) {
     row.className = "file-row";
     const name = document.createElement("span");
     name.textContent = (e.dir ? "📁 " : "📄 ") + e.name;
-    const size = document.createElement("span");
-    size.className = "size";
-    size.textContent = e.dir ? "" : fmtSize(e.size);
-    row.append(name, size);
+    const right = document.createElement("span");
+    right.className = "size";
     const childPath = data.path === "." ? e.name : `${data.path}/${e.name}`;
+    if (e.versions) {
+      const chip = document.createElement("button");
+      chip.className = "ghost mini vchip";
+      chip.textContent = `🕘 ${e.versions}`;
+      chip.title = "Saved versions";
+      chip.onclick = (ev) => { ev.stopPropagation(); showHistory(childPath); };
+      right.appendChild(chip);
+    }
+    const sz = document.createElement("span");
+    sz.textContent = e.dir ? "" : " " + fmtSize(e.size);
+    right.appendChild(sz);
+    row.append(name, right);
     row.onclick = () => (e.dir ? loadFiles(childPath) : viewFile(childPath));
     list.appendChild(row);
   }
@@ -671,7 +796,7 @@ function updateCost(ev) {
 }
 
 /* ---------- tabs ---------- */
-const PANE_LOADERS = { pipeline: refreshPipeline, schedules: loadSchedules, checkpoints: loadCheckpoints, memory: loadMemory, team: loadTeam, files: () => loadFiles(state.currentPath) };
+const PANE_LOADERS = { board: loadBoard, pipeline: refreshPipeline, schedules: loadSchedules, checkpoints: loadCheckpoints, memory: loadMemory, team: loadTeam, files: () => loadFiles(state.currentPath) };
 for (const tab of document.querySelectorAll(".tab")) {
   tab.onclick = () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));

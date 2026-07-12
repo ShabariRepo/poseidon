@@ -19,6 +19,7 @@ from .runs import RunManager
 from .scheduler import Scheduler
 from .store import Store
 from .tools.files import resolve_path
+from .versions import VersionStore
 
 STATIC_DIR = Path(__file__).parent / "static"
 ALLOWED_HOSTS = ("127.0.0.1", "localhost")
@@ -28,6 +29,7 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
     app = FastAPI(title="Poseidon", version=__version__)
     store = Store(CONFIG_DIR / "sessions.db", workdir)
     app.state.store = store
+    versions = VersionStore(store)
     runmgr = RunManager(store)
     broker = ApprovalBroker()
     busy: set[str] = set()
@@ -315,6 +317,80 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             raise HTTPException(404, "no schedule with that id")
         return {"ok": True}
 
+    # ---------- file versions ("saved versions", not commits) ----------
+    @app.get("/api/files/history")
+    async def file_history(path: str, project_id: str = "default"):
+        return {"versions": store.file_history(project_id, path)}
+
+    @app.get("/api/versions/{vid}")
+    async def get_version(vid: str):
+        v = store.get_version(vid)
+        if not v:
+            raise HTTPException(404, "unknown version")
+        blob = versions.read_blob(v["project_id"], v["hash"]) or b""
+        text = "(binary file)" if b"\x00" in blob[:4096] else blob.decode(errors="replace")[:200_000]
+        return {**v, "content": text}
+
+    @app.get("/api/versions/{vid}/diff")
+    async def version_diff(vid: str):
+        v = store.get_version(vid)
+        if not v:
+            raise HTTPException(404, "unknown version")
+        return versions.diff(v["project_id"], v)
+
+    @app.post("/api/versions/{vid}/restore")
+    async def version_restore(vid: str, body: dict):
+        v = store.get_version(vid)
+        if not v:
+            raise HTTPException(404, "unknown version")
+        project = project_or_404(v["project_id"])
+        result = versions.restore(v["project_id"], Path(project["workdir"]), v,
+                                  body.get("member_id", "owner"))
+        if "error" in result:
+            raise HTTPException(400, result["error"])
+        runmgr.publish({"type": "version_saved", "project_id": v["project_id"],
+                        "session_id": None, "path": v["path"]})
+        return result
+
+    # ---------- work board ----------
+    def _publish_work(pid):
+        runmgr.publish({"type": "work_update", "project_id": pid, "session_id": None})
+
+    @app.get("/api/work")
+    async def list_work(project_id: str = "default"):
+        return {"items": store.list_work_items(project_id)}
+
+    @app.post("/api/work")
+    async def add_work(body: dict):
+        pid = body.get("project_id", "default")
+        project_or_404(pid)
+        title = (body.get("title") or "").strip()
+        if not title:
+            raise HTTPException(422, "title required")
+        item = store.add_work_item(
+            pid, title, body.get("notes", ""),
+            body.get("status") if body.get("status") in ("todo", "doing", "review", "done") else "todo",
+            body.get("assignee_kind", ""), body.get("assignee_id", ""),
+            body.get("member_id", "owner"), files=body.get("files") or [])
+        _publish_work(pid)
+        return item
+
+    @app.patch("/api/work/{wid}")
+    async def update_work(wid: str, body: dict):
+        fields = {k: body[k] for k in ("title", "notes", "status", "assignee_kind", "assignee_id", "files") if k in body}
+        item = store.update_work_item(wid, **fields)
+        if not item:
+            raise HTTPException(404, "unknown card")
+        _publish_work(item["project_id"])
+        return item
+
+    @app.delete("/api/work/{wid}")
+    async def delete_work(wid: str, project_id: str = "default"):
+        if not store.delete_work_item(wid):
+            raise HTTPException(404, "unknown card")
+        _publish_work(project_id)
+        return {"ok": True}
+
     # ---------- memory ----------
     @app.get("/api/memory")
     async def get_memory(project_id: str = "default"):
@@ -337,12 +413,17 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             raise HTTPException(403, str(e))
         if not target.is_dir():
             raise HTTPException(404, "not a directory")
-        entries = [
-            {"name": c.name, "dir": c.is_dir(), "size": c.stat().st_size if c.is_file() else None}
-            for c in sorted(target.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower()))
-            if not c.name.startswith(".")
-        ]
+        tracked = store.tracked_paths(project_id)
         rel = str(target.relative_to(wd))
+        base = "" if rel == "." else rel + "/"
+        entries = []
+        for c in sorted(target.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower())):
+            if c.name.startswith("."):
+                continue
+            info = tracked.get(base + c.name)
+            entries.append({"name": c.name, "dir": c.is_dir(),
+                            "size": c.stat().st_size if c.is_file() else None,
+                            "versions": info["versions"] if info else 0})
         return {"path": "." if rel == "." else rel, "entries": entries[:1000]}
 
     @app.get("/api/file")

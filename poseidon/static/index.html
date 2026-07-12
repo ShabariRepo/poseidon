@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Poseidon</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔱</text></svg>" />
-  <link rel="stylesheet" href="/static/style.css?v=051" />
+  <link rel="stylesheet" href="/static/style.css?v=052" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
@@ -47,7 +47,8 @@
 
     <section id="workspace-pane">
       <nav class="tabs">
-        <button class="tab active" data-tab="pipeline">Pipeline</button>
+        <button class="tab active" data-tab="board">Board</button>
+        <button class="tab" data-tab="pipeline">Pipeline</button>
         <button class="tab" data-tab="activity">Activity</button>
         <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="files">Files</button>
@@ -56,7 +57,10 @@
         <button class="tab" data-tab="memory">Memory</button>
         <button class="tab" data-tab="team">Team</button>
       </nav>
-      <div id="tab-pipeline" class="tab-body active">
+      <div id="tab-board" class="tab-body active">
+        <div id="board" class="board"></div>
+      </div>
+      <div id="tab-pipeline" class="tab-body">
         <div id="pipeline-canvas" class="pipeline"><div class="feed-empty">Runs will appear here as a live diagram — chat turns, background tasks, schedules, and their subagents. Click a node to drill in.</div></div>
       </div>
       <div id="tab-activity" class="tab-body">
@@ -139,6 +143,6 @@
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=051"></script>
+  <script src="/static/app.js?v=052"></script>
 </body>
 </html>
