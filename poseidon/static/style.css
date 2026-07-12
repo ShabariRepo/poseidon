@@ -152,6 +152,7 @@ main { flex: 1; display: flex; min-height: 0; }
   align-self: flex-start; font-family: ui-monospace, monospace; font-size: .78rem;
   color: var(--muted); padding: 2px 10px; border-left: 2px solid var(--accent);
 }
+.msg.assistant.streaming::after { content: "▋"; color: var(--accent); animation: pulse .9s infinite; }
 .thinking { align-self: flex-start; color: var(--muted); font-size: .85rem; padding: 2px 10px; }
 .thinking::after { content: "…"; animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
@@ -183,14 +184,30 @@ button.ghost:hover { color: var(--text); background: var(--bg-input); }
 button.deny { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 button.deny:hover { background: var(--error-bg); }
 
-/* ---- workspace (right) ---- */
+/* ---- workspace (right): panes + the dock ---- */
 #workspace-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); background: var(--bg-raised); backdrop-filter: blur(6px); }
-.tab { background: transparent; color: var(--muted); border: none; border-radius: 8px 8px 0 0; padding: 8px 16px; font-weight: 500; }
-.tab:hover { background: var(--bg-input); color: var(--text); }
-.tab.active { color: var(--accent-deep); background: var(--accent-soft); }
+.tabs {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 4; display: flex; gap: 2px; align-items: flex-end;
+  padding: 7px 10px; border-radius: 22px;
+  background: color-mix(in srgb, var(--bg-solid) 74%, transparent);
+  backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .16);
+}
+.tab {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 56px; padding: 6px 2px 4px; border: none; border-radius: 14px;
+  background: transparent; color: var(--muted); font-weight: 500; cursor: pointer;
+  transition: transform .18s cubic-bezier(.34, 1.56, .64, 1);
+}
+.tab .ico { font-size: 1.3rem; line-height: 1.2; filter: saturate(.9); }
+.tab .lbl { font-size: .58rem; letter-spacing: .2px; }
+.tab:hover { transform: translateY(-7px) scale(1.16); background: transparent; color: var(--text); }
+.tab.active { color: var(--accent-deep); }
+.tab.active::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); margin-top: 2px; }
 :root[data-skin="trek"] .tab.active { color: var(--accent); }
-.tab-body { flex: 1; overflow-y: auto; display: none; min-height: 0; }
+.tab-body { flex: 1; overflow-y: auto; display: none; min-height: 0; padding-bottom: 96px; }
 .tab-body.active { display: block; }
 
 .feed { padding: 14px; font-family: ui-monospace, monospace; font-size: .8rem; }
@@ -517,6 +534,26 @@ dialog h3 { margin: 16px 0 4px; font-size: .95rem; }
 .settings-grid input[type="checkbox"] { width: auto; }
 .rules-list { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
 .rule-row { display: flex; justify-content: space-between; align-items: center; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: .78rem; }
+
+/* ---- contemporary card language (airbnb/mac cues) ---- */
+.schedule-card, .bcard, .pnode, .bcol {
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 4px 14px rgba(16, 24, 40, .05);
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+.schedule-card:hover, .bcard:hover, .pnode:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  box-shadow: 0 2px 4px rgba(16, 24, 40, .05), 0 14px 32px rgba(16, 24, 40, .11);
+}
+.pnode.source:hover { transform: none; box-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 4px 14px rgba(16, 24, 40, .05); }
+dialog, .drill-card, .drawer { border-radius: 20px; }
+button { border-radius: 12px; }
+button:not(.ghost):not(.deny):not(.mini) { box-shadow: 0 1px 2px rgba(16, 24, 40, .12); }
+#chat-input { border-radius: 14px; }
+.msg { border-radius: 16px; }
+.msg.assistant { box-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 3px 10px rgba(16, 24, 40, .04); }
 
 /* ---- work board ---- */
 .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 14px; align-items: start; }

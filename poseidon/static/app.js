@@ -21,7 +21,7 @@ const esc = (s) => { const d = document.createElement("span"); d.textContent = s
 async function init() {
   const s = await fetch("/api/state").then((r) => r.json());
   Object.assign(state, { presets: s.presets, engine: s.engine, rules: s.approval_rules,
-    projects: s.projects, members: s.members });
+    projects: s.projects, members: s.members, approvalMode: s.approval_mode });
   $("workdir")?.remove();
   fillProjectSelect();
   fillMemberSelect();
@@ -174,9 +174,29 @@ function handleEvent(ev) {
   const mine = ev.session_id === state.sessionId;
   switch (ev.type) {
     case "turn_started": if (mine) setThinking(true); break;
+    case "assistant_delta": {
+      if (!mine || ev.agent) break;
+      setThinking(false);
+      if (!state.streamEl) {
+        state.streamEl = document.createElement("div");
+        state.streamEl.className = "msg assistant streaming";
+        $("messages").appendChild(state.streamEl);
+      }
+      state.streamEl.textContent += ev.chunk;
+      scrollChat();
+      break;
+    }
     case "assistant_message":
       if (!mine) break;
-      setThinking(false); addMsg("assistant", ev.content); setThinking(state.busy);
+      setThinking(false);
+      if (!ev.agent && state.streamEl) {
+        state.streamEl.textContent = ev.content;
+        state.streamEl.classList.remove("streaming");
+        state.streamEl = null;
+      } else {
+        addMsg("assistant", ev.content);
+      }
+      setThinking(state.busy);
       break;
     case "tool_call":
       setThinking(false);
@@ -209,6 +229,7 @@ function handleEvent(ev) {
     case "error": if (mine) { setThinking(false); addMsg("error", ev.message); } break;
     case "turn_complete":
       if (!mine) break;
+      if (state.streamEl) { state.streamEl.classList.remove("streaming"); state.streamEl = null; }
       state.busy = false; setThinking(false);
       $("send-btn").disabled = false;
       loadFiles(state.currentPath);
@@ -841,6 +862,7 @@ function fillEngine() {
   $("eng-keep").value = state.engine.keep_recent;
   $("eng-iter").value = state.engine.max_iterations;
   $("eng-ckpt").checked = !!state.engine.auto_checkpoint;
+  if (state.approvalMode) $("eng-mode").value = state.approvalMode;
 }
 
 function fillIntegrations(s) {
@@ -879,7 +901,8 @@ $("cfg-save").onclick = async (e) => {
   }
   const r = await fetch("/api/settings/engine", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ compact_tokens: +$("eng-compact").value, keep_recent: +$("eng-keep").value,
-      max_iterations: +$("eng-iter").value, auto_checkpoint: $("eng-ckpt").checked }) });
+      max_iterations: +$("eng-iter").value, auto_checkpoint: $("eng-ckpt").checked,
+      approval_mode: $("eng-mode").value }) });
   if (r.ok) state.engine = (await r.json()).engine;
   const integ = { gmail: { email: $("int-gmail-email").value }, slack: { default_channel: $("int-slack-channel").value } };
   if ($("int-gmail-pass").value.trim()) integ.gmail.app_password = $("int-gmail-pass").value.trim();

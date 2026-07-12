@@ -1,0 +1,13 @@
+{
+  "name": "Poseidon",
+  "short_name": "Poseidon",
+  "description": "Your team's AI agent — files, versions, board, pipelines.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f2f7fb",
+  "theme_color": "#0f7fa8",
+  "icons": [
+    { "src": "/static/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

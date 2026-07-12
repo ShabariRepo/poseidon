@@ -34,8 +34,21 @@ class ApprovalBroker:
             for r in rules
         )
 
+    # permission presets: one dial for non-technical users.
+    # careful   — everything asks (default)
+    # balanced  — file edits auto-approved (they're versioned), commands/sends ask
+    # autonomous— everything but outward sends (email/slack) auto-approved
+    MODE_AUTO = {
+        "careful": set(),
+        "balanced": {"write_file", "edit_file", "edit_spreadsheet"},
+        "autonomous": {"write_file", "edit_file", "edit_spreadsheet", "run_command", "schedule_task"},
+    }
+
     async def request(self, emit, tool: str, subject: str, detail: str, unattended: bool = False) -> dict:
         """Returns {"approved": bool, "always": bool, "auto": bool}."""
+        mode = (load_config().get("approvals", {}) or {}).get("mode", "careful")
+        if tool in self.MODE_AUTO.get(mode, set()):
+            return {"approved": True, "always": False, "auto": True}
         if self._rule_allows(tool, subject):
             return {"approved": True, "always": False, "auto": True}
         if unattended:

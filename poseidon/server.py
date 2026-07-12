@@ -88,6 +88,7 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
                           "has_key": bool(provider.get("api_key"))} if provider else None),
             "presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in PRESETS.items()},
             "approval_rules": cfg.get("approvals", {}).get("rules", []),
+            "approval_mode": cfg.get("approvals", {}).get("mode", "careful"),
             "engine": engine_settings(),
             "integrations": {
                 "gmail": {"email": (cfg.get("integrations", {}).get("gmail", {}) or {}).get("email", ""),
@@ -121,8 +122,11 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
                 eng[key] = max(lo, min(hi, int(body[key])))
         if "auto_checkpoint" in body:
             eng["auto_checkpoint"] = bool(body["auto_checkpoint"])
+        if body.get("approval_mode") in ("careful", "balanced", "autonomous"):
+            cfg.setdefault("approvals", {})["mode"] = body["approval_mode"]
         save_config(cfg)
-        return {"ok": True, "engine": engine_settings()}
+        return {"ok": True, "engine": engine_settings(),
+                "approval_mode": cfg.get("approvals", {}).get("mode", "careful")}
 
     @app.post("/api/settings/integrations")
     async def set_integrations(body: dict):

@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Poseidon</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔱</text></svg>" />
-  <link rel="stylesheet" href="/static/style.css?v=052" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#0f7fa8" />
+  <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
+  <link rel="stylesheet" href="/static/style.css?v=070" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
@@ -47,15 +50,15 @@
 
     <section id="workspace-pane">
       <nav class="tabs">
-        <button class="tab active" data-tab="board">Board</button>
-        <button class="tab" data-tab="pipeline">Pipeline</button>
-        <button class="tab" data-tab="activity">Activity</button>
-        <button class="tab" data-tab="tasks">Tasks</button>
-        <button class="tab" data-tab="files">Files</button>
-        <button class="tab" data-tab="checkpoints">Checkpoints</button>
-        <button class="tab" data-tab="schedules">Schedules</button>
-        <button class="tab" data-tab="memory">Memory</button>
-        <button class="tab" data-tab="team">Team</button>
+        <button class="tab active" data-tab="board"><span class="ico">📋</span><span class="lbl">Board</span></button>
+        <button class="tab" data-tab="pipeline"><span class="ico">🧭</span><span class="lbl">Pipeline</span></button>
+        <button class="tab" data-tab="activity"><span class="ico">📡</span><span class="lbl">Activity</span></button>
+        <button class="tab" data-tab="tasks"><span class="ico">☑️</span><span class="lbl">Tasks</span></button>
+        <button class="tab" data-tab="files"><span class="ico">📁</span><span class="lbl">Files</span></button>
+        <button class="tab" data-tab="checkpoints"><span class="ico">📍</span><span class="lbl">Rewind</span></button>
+        <button class="tab" data-tab="schedules"><span class="ico">⏰</span><span class="lbl">Schedule</span></button>
+        <button class="tab" data-tab="memory"><span class="ico">🧠</span><span class="lbl">Memory</span></button>
+        <button class="tab" data-tab="team"><span class="ico">👥</span><span class="lbl">Team</span></button>
       </nav>
       <div id="tab-board" class="tab-body active">
         <div id="board" class="board"></div>
@@ -114,6 +117,13 @@
       <label>Keep recent messages <input id="eng-keep" type="number" min="2" max="40" /></label>
       <label>Max steps per turn <input id="eng-iter" type="number" min="5" max="60" /></label>
       <label class="check"><input id="eng-ckpt" type="checkbox" /> Auto-checkpoint after real work</label>
+      <label>Autonomy
+        <select id="eng-mode">
+          <option value="careful">Careful — ask before every change</option>
+          <option value="balanced">Balanced — file edits just happen (versioned), commands ask</option>
+          <option value="autonomous">Autonomous — only emails/messages ask</option>
+        </select>
+      </label>
     </div>
     <h3>Integrations</h3>
     <div class="settings-grid">
@@ -143,6 +153,6 @@
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=052"></script>
+  <script src="/static/app.js?v=070"></script>
 </body>
 </html>

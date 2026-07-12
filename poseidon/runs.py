@@ -36,7 +36,7 @@ class RunManager:
         async def emit(ev: dict):
             ev = {**ev, "project_id": project_id, "session_id": session_id, "run_id": run_id}
             self.publish(ev)
-            if run_id and ev.get("type") not in ("cost_update",):
+            if run_id and ev.get("type") not in ("cost_update", "assistant_delta"):
                 payload = {k: v for k, v in ev.items()
                            if k not in ("project_id", "session_id", "run_id")}
                 self.store.add_run_event(run_id, ev["type"], payload)

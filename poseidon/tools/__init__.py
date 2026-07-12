@@ -154,6 +154,18 @@ _register(
 )
 
 
+async def _use_skill(args, ctx):
+    from .. import skills
+    return skills.read_skill(ctx["workdir"], args["name"])
+
+
+_register(
+    "use_skill",
+    "Load a skill's full instructions by name (skills are listed in your system prompt).",
+    {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    _use_skill,
+)
+
 _register(
     "read_document",
     "Read an office document: .xlsx (sheets as tables), .docx (text), .pdf (text).",
