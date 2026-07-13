@@ -109,8 +109,8 @@ class Store:
             )
         if not c.execute("SELECT 1 FROM members LIMIT 1").fetchone():
             c.execute(
-                "INSERT INTO members (id, name, color, created) VALUES (?,?,?,?)",
-                ("owner", "Owner", "#0f7fa8", _now()),
+                "INSERT INTO members (id, name, color, created, token) VALUES (?,?,?,?,?)",
+                ("owner", "Owner", "#0f7fa8", _now(), uuid.uuid4().hex),
             )
         c.execute(
             "INSERT OR IGNORE INTO memberships (project_id, member_id, role) VALUES ('default','owner','admin')"
