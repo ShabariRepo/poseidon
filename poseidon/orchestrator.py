@@ -106,7 +106,11 @@ async def _chat_completion_stream(provider, messages, tools, on_delta):
     headers = {}
     if provider.get("api_key"):
         headers["Authorization"] = f"Bearer {provider['api_key']}"
-    body = {"model": provider["model"], "messages": messages, "stream": True}
+    body = {"model": provider["model"], "messages": messages, "stream": True,
+            # OpenAI-compatible providers (Groq, OpenAI, …) omit token usage from
+            # streamed responses unless we explicitly ask — without this the cost
+            # meter never updates.
+            "stream_options": {"include_usage": True}}
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"
