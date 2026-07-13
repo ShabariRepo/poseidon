@@ -8,7 +8,7 @@
   <link rel="manifest" href="/static/manifest.json" />
   <meta name="theme-color" content="#0f7fa8" />
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
-  <link rel="stylesheet" href="/static/style.css?v=080" />
+  <link rel="stylesheet" href="/static/style.css?v=090" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
@@ -107,6 +107,16 @@
     <h2>Settings</h2>
     <h3>Provider</h3>
     <p class="muted">Any OpenAI-compatible endpoint works. Keys never leave this machine.</p>
+    <div id="codex-box" class="codex-box">
+      <div class="codex-head">🔑 Use your ChatGPT subscription <span class="muted">(no API key)</span>
+        <span id="codex-status" class="badge">not linked</span></div>
+      <div class="codex-actions">
+        <button class="ghost mini" id="codex-signin" type="button">Sign in with ChatGPT</button>
+        <button class="ghost mini" id="codex-import" type="button" title="Reuse an existing `codex login`">Import Codex CLI</button>
+        <button class="ghost mini" id="codex-logout" type="button" hidden>Sign out</button>
+      </div>
+      <div id="codex-flow" class="codex-flow" hidden></div>
+    </div>
     <label>Preset <select id="preset-select"></select></label>
     <label>Base URL <input id="cfg-base-url" placeholder="https://api.openai.com/v1" /></label>
     <label>API key <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" /></label>
@@ -157,6 +167,6 @@
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=080"></script>
+  <script src="/static/app.js?v=090"></script>
 </body>
 </html>

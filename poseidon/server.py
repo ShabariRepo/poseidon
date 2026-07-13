@@ -117,6 +117,50 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         save_config(cfg)
         return {"ok": True}
 
+    # ---------- Codex (ChatGPT-subscription) sign-in ----------
+    @app.get("/api/codex/status")
+    async def codex_status():
+        from . import codex
+        return codex.status()
+
+    @app.post("/api/codex/start")
+    async def codex_start():
+        from . import codex
+        try:
+            return await codex.device_start()
+        except Exception as e:
+            raise HTTPException(502, f"couldn't start ChatGPT login: {e}")
+
+    @app.post("/api/codex/poll")
+    async def codex_poll(body: dict):
+        from . import codex
+        try:
+            return await codex.device_poll(body.get("device_auth_id", ""), body.get("user_code", ""))
+        except Exception as e:
+            raise HTTPException(502, str(e))
+
+    @app.post("/api/codex/import")
+    async def codex_import():
+        from . import codex
+        return {"ok": codex.import_codex_cli()}
+
+    @app.post("/api/codex/use")
+    async def codex_use(body: dict):
+        from . import codex
+        if not codex.is_linked():
+            raise HTTPException(400, "sign in with ChatGPT first")
+        cfg = load_config()
+        cfg["provider"] = {"type": "codex", "model": (body.get("model") or "gpt-5.5").strip(),
+                           "base_url": "", "api_key": ""}
+        save_config(cfg)
+        return {"ok": True}
+
+    @app.post("/api/codex/logout")
+    async def codex_logout():
+        from . import codex
+        codex.logout()
+        return {"ok": True}
+
     @app.post("/api/settings/engine")
     async def set_engine(body: dict):
         cfg = load_config()

@@ -908,7 +908,63 @@ function fillRules() {
   });
 }
 
-function openSettings() { $("settings-modal").showModal(); }
+/* ---------- Codex (ChatGPT-subscription) sign-in ---------- */
+let codexPoll = null;
+
+async function refreshCodexStatus() {
+  const s = await fetch("/api/codex/status").then((r) => r.json()).catch(() => ({}));
+  const badge = $("codex-status");
+  badge.textContent = s.linked ? (s.expiring ? "linked (refreshing)" : "linked ✓") : "not linked";
+  $("codex-logout").hidden = !s.linked;
+  $("codex-signin").textContent = s.linked ? "Re-link" : "Sign in with ChatGPT";
+}
+
+$("codex-signin").onclick = async () => {
+  const flow = $("codex-flow");
+  flow.hidden = false;
+  flow.innerHTML = "Starting…";
+  const r = await fetch("/api/codex/start", { method: "POST" });
+  if (!r.ok) { flow.textContent = (await r.json().catch(() => ({}))).detail || "failed to start"; return; }
+  const d = await r.json();
+  flow.innerHTML = `Go to <a href="${esc(d.verify_url)}" target="_blank" rel="noopener">${esc(d.verify_url)}</a>
+    and enter code <b class="codex-code">${esc(d.user_code)}</b> — then use your ChatGPT model here.
+    <div class="muted" id="codex-poll-note">waiting for you to authorize…</div>`;
+  window.open(d.verify_url, "_blank");
+  clearInterval(codexPoll);
+  codexPoll = setInterval(async () => {
+    const p = await fetch("/api/codex/poll", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_auth_id: d.device_auth_id, user_code: d.user_code }) })
+      .then((x) => x.json()).catch(() => ({ status: "pending" }));
+    if (p.status === "authorized") {
+      clearInterval(codexPoll);
+      await fetch("/api/codex/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.5" }) });
+      flow.innerHTML = '✓ Signed in — Poseidon is now using your ChatGPT subscription (gpt-5.5).';
+      refreshCodexStatus();
+    }
+  }, (d.interval || 5) * 1000);
+};
+
+$("codex-import").onclick = async () => {
+  const r = await fetch("/api/codex/import", { method: "POST" }).then((x) => x.json());
+  const flow = $("codex-flow");
+  flow.hidden = false;
+  if (r.ok) {
+    await fetch("/api/codex/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.5" }) });
+    flow.innerHTML = "✓ Imported your Codex CLI login — using ChatGPT subscription.";
+    refreshCodexStatus();
+  } else {
+    flow.textContent = "No Codex CLI login found (~/.codex/auth.json). Use Sign in with ChatGPT instead.";
+  }
+};
+
+$("codex-logout").onclick = async () => {
+  clearInterval(codexPoll);
+  await fetch("/api/codex/logout", { method: "POST" });
+  $("codex-flow").hidden = true;
+  refreshCodexStatus();
+};
+
+function openSettings() { $("settings-modal").showModal(); refreshCodexStatus(); }
 $("settings-btn").onclick = openSettings;
 $("cfg-cancel").onclick = () => $("settings-modal").close();
 $("cfg-save").onclick = async (e) => {

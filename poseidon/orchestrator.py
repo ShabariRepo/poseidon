@@ -79,6 +79,9 @@ def engine_settings() -> dict:
 async def _chat_completion(provider, messages, tools, retries=2):
     """Providers hiccup (rate limits, malformed tool-call generations on
     smaller models) — retry with backoff before failing the whole turn."""
+    if provider.get("type") == "codex":
+        from . import codex
+        return await codex.responses_request(provider["model"], messages, tools, None)
     headers = {}
     if provider.get("api_key"):
         headers["Authorization"] = f"Bearer {provider['api_key']}"
@@ -103,6 +106,9 @@ async def _chat_completion(provider, messages, tools, retries=2):
 async def _chat_completion_stream(provider, messages, tools, on_delta):
     """Streaming completion: emits content deltas as they arrive, assembles
     tool calls from fragments. Returns the same shape as _chat_completion."""
+    if provider.get("type") == "codex":
+        from . import codex
+        return await codex.responses_request(provider["model"], messages, tools, on_delta)
     headers = {}
     if provider.get("api_key"):
         headers["Authorization"] = f"Bearer {provider['api_key']}"

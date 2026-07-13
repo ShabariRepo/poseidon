@@ -630,3 +630,10 @@ button:not(.ghost):not(.deny):not(.mini) { box-shadow: 0 1px 2px rgba(16, 24, 40
 .memgraph .memnode.ghost text { fill: var(--muted); font-style: italic; }
 .vault-hint { padding: 4px 6px 2px; }
 .schedule-card.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ---- codex (ChatGPT subscription) sign-in ---- */
+.codex-box { background: var(--bg-input); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 8px 0 14px; }
+.codex-head { font-size: .85rem; font-weight: 650; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.codex-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.codex-flow { margin-top: 10px; font-size: .82rem; line-height: 1.5; }
+.codex-code { font-family: ui-monospace, monospace; font-size: 1.05rem; letter-spacing: 2px; background: var(--bg-solid); padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); }
