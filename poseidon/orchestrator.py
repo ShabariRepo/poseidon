@@ -69,7 +69,7 @@ def engine_settings() -> dict:
     cfg = load_config()
     eng = cfg.get("engine") or {}
     return {
-        "compact_tokens": int(eng.get("compact_tokens", 24000)),
+        "compact_tokens": int(eng.get("compact_tokens", 198000)),
         "keep_recent": int(eng.get("keep_recent", 8)),
         "auto_checkpoint": bool(eng.get("auto_checkpoint", True)),
         "max_iterations": int(eng.get("max_iterations", 25)),
@@ -267,6 +267,12 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
             except Exception:
                 pass
         store.save_messages(session_id, messages)
+        # feed the context meter: how full is this session vs the compact line
+        try:
+            await emit({"type": "context", "tokens": _estimate_tokens(messages),
+                        "limit": engine_settings()["compact_tokens"]})
+        except Exception:
+            pass
         await emit({"type": "turn_complete"})
         runmgr.finish(project["id"], session_id, run_id, status, err)
 
@@ -280,7 +286,9 @@ async def _maybe_compact(ctx, provider, messages, settings) -> list:
     if boundary <= 1:
         return messages
     old, recent = messages[1:boundary], messages[boundary:]
-    dump = json.dumps(old)[:60_000]
+    # The summarizer call must itself fit the model's window: cap the dump at
+    # ~3 chars per threshold token (well under the window that threshold implies).
+    dump = json.dumps(old)[: min(600_000, settings["compact_tokens"] * 3)]
     try:
         data = await _chat_completion(provider, [
             {"role": "system", "content": "Summarize this agent conversation history into a dense progress brief: what was asked, what was done (files, commands, results), decisions made, open items. Keep every fact needed to continue the work."},
@@ -290,7 +298,7 @@ async def _maybe_compact(ctx, provider, messages, settings) -> list:
     except Exception:
         return messages  # compaction is best-effort, never fatal
     await ctx.emit({"type": "compacted", "dropped": len(old)})
-    return [messages[0], {"role": "system", "content": f"[Compacted history]\n{summary[:8000]}"}] + recent
+    return [messages[0], {"role": "system", "content": f"[Compacted history]\n{summary[:16_000]}"}] + recent
 
 
 def _checkpoint(ctx, messages, label, auto):

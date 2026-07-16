@@ -119,6 +119,7 @@ async function newSession() {
   state.sessionOwner = state.memberId;
   $("messages").innerHTML = "";
   $("session-title").textContent = "new session";
+  updateContext(null);
   clearActivityAndTasks();
   openEvents();
 }
@@ -134,6 +135,7 @@ async function openSession(sid) {
   $("session-title").textContent = s.title || "untitled";
   if (s.progress) addProgressChip(s.progress);
   updateCost({ cost: s.cost, tokens_in: s.tokens_in, tokens_out: s.tokens_out, priced: !!s.priced });
+  updateContext(s.context);
   openEvents();
   $("session-drawer").hidden = true;
 }
@@ -218,6 +220,7 @@ function handleEvent(ev) {
     case "tasks_update": if (mine) renderTasks(ev.tasks); break;
     case "approval_required": if (mine) { setThinking(false); renderApproval(ev); } break;
     case "cost_update": if (mine) updateCost(ev); break;
+    case "context": if (mine) updateContext(ev); break;
     case "checkpoint_saved": if (mine) addChip(`📍 checkpoint saved${ev.auto ? " (auto)" : ""}`); break;
     case "work_update":
       if (document.querySelector(".tab.active")?.dataset.tab === "board") loadBoard();
@@ -817,6 +820,34 @@ function updateCost(ev) {
   el.title = `Session cost — ${(ev.tokens_in || 0).toLocaleString()} in / ${(ev.tokens_out || 0).toLocaleString()} out${ev.priced ? "" : " (model unpriced, cost incomplete)"}`;
   el.classList.toggle("unpriced", !ev.priced);
 }
+
+/* ---------- context meter ---------- */
+function updateContext(ev) {
+  const meter = $("ctx-meter");
+  if (!ev || !ev.limit) { meter.hidden = true; $("ctx-tip").hidden = true; return; }
+  const pct = Math.min(100, Math.round((ev.tokens / ev.limit) * 100));
+  meter.hidden = false;
+  meter.dataset.tokens = ev.tokens;
+  meter.dataset.limit = ev.limit;
+  $("ctx-fill").style.width = pct + "%";
+  $("ctx-label").textContent = pct + "%";
+  meter.classList.toggle("warn", pct >= 70 && pct < 90);
+  meter.classList.toggle("hot", pct >= 90);
+}
+
+$("ctx-meter").onclick = (e) => {
+  e.stopPropagation();
+  const tip = $("ctx-tip");
+  if (!tip.hidden) { tip.hidden = true; return; }
+  const m = $("ctx-meter");
+  $("ctx-tip-stats").textContent =
+    `~${Number(m.dataset.tokens || 0).toLocaleString()} of ${Number(m.dataset.limit || 0).toLocaleString()} tokens used before auto-summary`;
+  tip.hidden = false;
+};
+document.addEventListener("click", (e) => {
+  const tip = $("ctx-tip");
+  if (!tip.hidden && !tip.contains(e.target)) tip.hidden = true;
+});
 
 /* ---------- tabs ---------- */
 const PANE_LOADERS = { board: loadBoard, pipeline: refreshPipeline, schedules: loadSchedules, checkpoints: loadCheckpoints, memory: loadMemory, team: loadTeam, files: () => loadFiles(state.currentPath) };

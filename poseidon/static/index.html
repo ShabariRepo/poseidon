@@ -8,7 +8,7 @@
   <link rel="manifest" href="/static/manifest.json" />
   <meta name="theme-color" content="#0f7fa8" />
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
-  <link rel="stylesheet" href="/static/style.css?v=090" />
+  <link rel="stylesheet" href="/static/style.css?v=091" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
@@ -35,7 +35,23 @@
       <div class="chat-toolbar">
         <button id="sessions-btn" class="ghost mini">☰ Sessions</button>
         <span id="session-title" class="session-title"></span>
+        <button id="ctx-meter" class="ctx-meter" type="button" title="How much of this session's context is used — click to learn more" hidden>
+          <span class="ctx-track"><i id="ctx-fill"></i></span><span id="ctx-label">0%</span>
+        </button>
         <button id="new-session-btn" class="ghost mini" title="New session">＋ New</button>
+      </div>
+      <div id="ctx-tip" class="ctx-tip" hidden>
+        <b>Session memory</b>
+        <p id="ctx-tip-stats" class="ctx-stats"></p>
+        <p>Everything in this chat — your messages, Poseidon's replies, and what its
+        tools returned — rides along on every turn so the model remembers the
+        conversation. That working memory (the <i>context</i>) has a size limit.</p>
+        <p>When the bar fills, Poseidon automatically summarizes the older part of
+        the session into a dense brief and keeps the recent messages verbatim, so
+        the conversation just keeps going. Nothing is deleted — the full history
+        stays saved, and durable facts live in project Memory.</p>
+        <p class="muted">The limit is tunable in Settings → Engine (lower it for
+        small-context models).</p>
       </div>
       <div id="session-drawer" class="drawer" hidden>
         <div class="drawer-head">Sessions <button class="ghost mini" id="drawer-close">✕</button></div>
@@ -167,6 +183,6 @@
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=090"></script>
+  <script src="/static/app.js?v=091"></script>
 </body>
 </html>

@@ -144,6 +144,15 @@ workload. Google Drive strategy: point the project workdir at a Drive for
 desktop synced folder — versioning/board layer on top, zero OAuth.
 (4) scripts/install.sh one-liner (activates once published to PyPI).
 
+**v0.9.1 — context meter ✅ (shipped 2026-07-16):** out-of-the-box context
+handling. Auto-summary threshold raised 24k → 198k tokens (200k-class models;
+configs still on the old 24k default are migrated in place, custom values
+untouched), summarizer dump/brief caps scaled to match. New context meter in the
+chat toolbar: progress bar showing session fill vs the compact line (amber ≥70%,
+red ≥90%), click for a plain-language explainer with live token counts. Fed by a
+`context` SSE event each turn + the session endpoint on load. Small-window
+models (Groq llama ~131k) should lower the threshold in Settings → Engine.
+
 **v0.5.x — server mode:** `poseidon serve` on a shared box (per-member tokens,
 TLS guidance) so teams use one instance from their browsers; Duncan-Lane-scale
 external integrations (gmail/slack connectors as tools).

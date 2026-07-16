@@ -14,7 +14,7 @@ from . import __version__
 from . import memory as memory_store
 from .approvals import ApprovalBroker
 from .config import CONFIG_DIR, PRESETS, load_config, save_config
-from .orchestrator import engine_settings, run_turn
+from .orchestrator import _estimate_tokens, engine_settings, run_turn
 from .runs import RunManager
 from .scheduler import Scheduler
 from .store import Store
@@ -335,11 +335,14 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         meta = store.session_meta(sid)
         if not meta:
             raise HTTPException(404, "unknown session")
-        msgs = [m for m in store.get_messages(sid)
+        raw = store.get_messages(sid)
+        msgs = [m for m in raw
                 if isinstance(m, dict) and (
                     (m.get("role") == "user" and isinstance(m.get("content"), str) and not m["content"].startswith("[scheduled run]"))
                     or (m.get("role") == "assistant" and m.get("content")))]
-        return {**meta, "messages": [{"role": m["role"], "content": m["content"]} for m in msgs]}
+        return {**meta, "messages": [{"role": m["role"], "content": m["content"]} for m in msgs],
+                "context": {"tokens": _estimate_tokens(raw),
+                            "limit": engine_settings()["compact_tokens"]}}
 
     # ---------- chat ----------
     @app.post("/api/chat")

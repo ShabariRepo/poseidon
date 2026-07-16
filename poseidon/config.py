@@ -48,7 +48,10 @@ DEFAULT_CONFIG = {
         "rules": []  # [{"tool": "run_command", "pattern": "git *"}]
     },
     "engine": {
-        "compact_tokens": 24000,   # compact context above this estimate
+        # Auto-summarize the session above this estimate. Default assumes a
+        # 200k-context model (Claude/GPT-4.1 class) with headroom for the reply;
+        # turn it down in Settings for small-window models (llama on Groq: ~100k).
+        "compact_tokens": 198000,
         "keep_recent": 8,          # messages kept verbatim through compaction
         "auto_checkpoint": True,   # checkpoint after write/run turns
         "max_iterations": 25,      # tool-loop cap per turn
@@ -69,7 +72,13 @@ def load_config() -> dict:
     if CONFIG_PATH.exists():
         try:
             cfg = json.loads(CONFIG_PATH.read_text())
-            return {**DEFAULT_CONFIG, **cfg}
+            merged = {**DEFAULT_CONFIG, **cfg}
+            # migrate configs saved when 24000 was the default (pre-0.9.1):
+            # anyone still on the old default gets the new one, an explicit
+            # custom value is left alone.
+            if (merged.get("engine") or {}).get("compact_tokens") == 24000:
+                merged["engine"]["compact_tokens"] = DEFAULT_CONFIG["engine"]["compact_tokens"]
+            return merged
         except (json.JSONDecodeError, OSError):
             pass
     return json.loads(json.dumps(DEFAULT_CONFIG))
