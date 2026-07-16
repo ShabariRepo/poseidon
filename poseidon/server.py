@@ -138,6 +138,21 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         except Exception as e:
             raise HTTPException(502, f"couldn't start ChatGPT login: {e}")
 
+    # Browser OAuth (PKCE + loopback callback) — the primary sign-in. Needs no
+    # ChatGPT account setting, unlike the device flow (an off-by-default beta).
+    @app.post("/api/codex/browser-start")
+    async def codex_browser_start():
+        from . import codex
+        try:
+            return await codex.browser_start()
+        except Exception as e:
+            raise HTTPException(502, str(e))
+
+    @app.get("/api/codex/browser-status")
+    async def codex_browser_status():
+        from . import codex
+        return codex.browser_status()
+
     @app.post("/api/codex/poll")
     async def codex_poll(body: dict):
         from . import codex

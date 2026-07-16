@@ -1057,10 +1057,59 @@ async function refreshCodexStatus() {
   $("codex-signin").textContent = s.linked ? "Re-link" : "Sign in with ChatGPT";
 }
 
+async function codexLinked(flow) {
+  await fetch("/api/codex/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.5" }) });
+  flow.innerHTML = '✓ Signed in — Poseidon is now using your ChatGPT subscription (gpt-5.5).';
+  refreshCodexStatus();
+}
+
+function wireDeviceLink() {
+  const link = $("codex-device-link");
+  if (link) link.onclick = (e) => { e.preventDefault(); codexDeviceFlow(); };
+}
+
+// Primary: browser OAuth (what `codex login` does) — no account settings needed.
 $("codex-signin").onclick = async () => {
   const flow = $("codex-flow");
   flow.hidden = false;
   flow.innerHTML = "Starting…";
+  const r = await fetch("/api/codex/browser-start", { method: "POST" });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => ({}))).detail;
+    flow.innerHTML = `${esc(detail || `Couldn't start the sign-in (HTTP ${r.status}).`)}
+      <br /><a href="#" id="codex-device-link">Use a device code instead</a>`;
+    wireDeviceLink();
+    return;
+  }
+  const d = await r.json();
+  window.open(d.auth_url, "_blank");
+  flow.innerHTML = `A ChatGPT sign-in tab just opened — finish signing in there.
+    If nothing opened, <a href="${esc(d.auth_url)}" target="_blank" rel="noopener">click here</a>.
+    <div class="muted" id="codex-poll-note">waiting for you to sign in…</div>
+    <a href="#" id="codex-device-link" class="muted">Poseidon running on a remote box? Use a device code instead</a>`;
+  wireDeviceLink();
+  clearInterval(codexPoll);
+  codexPoll = setInterval(async () => {
+    const p = await fetch("/api/codex/browser-status").then((x) => x.json()).catch(() => ({}));
+    if (p.status === "authorized") {
+      clearInterval(codexPoll);
+      await codexLinked(flow);
+    } else if (p.status === "error") {
+      clearInterval(codexPoll);
+      flow.innerHTML = `Sign-in failed: ${esc(p.error || "unknown error")}
+        <br /><a href="#" id="codex-device-link">Try a device code instead</a>`;
+      wireDeviceLink();
+    }
+  }, 2000);
+};
+
+// Fallback: device-code flow (for headless/remote boxes). OpenAI beta —
+// requires ChatGPT Settings -> Security -> "Device code login" to be on.
+async function codexDeviceFlow() {
+  const flow = $("codex-flow");
+  flow.hidden = false;
+  flow.innerHTML = "Starting…";
+  clearInterval(codexPoll);
   const r = await fetch("/api/codex/start", { method: "POST" });
   if (!r.ok) {
     const detail = (await r.json().catch(() => ({}))).detail;
@@ -1077,20 +1126,16 @@ $("codex-signin").onclick = async () => {
     (signed in to chatgpt.com in that browser) and enter code <b class="codex-code">${esc(d.user_code)}</b>.
     <div class="muted" id="codex-poll-note">waiting for you to authorize… (if that page shows "not found",
     the setting above is still off)</div>`;
-  window.open(d.verify_url, "_blank");
-  clearInterval(codexPoll);
   codexPoll = setInterval(async () => {
     const p = await fetch("/api/codex/poll", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ device_auth_id: d.device_auth_id, user_code: d.user_code }) })
       .then((x) => x.json()).catch(() => ({ status: "pending" }));
     if (p.status === "authorized") {
       clearInterval(codexPoll);
-      await fetch("/api/codex/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.5" }) });
-      flow.innerHTML = '✓ Signed in — Poseidon is now using your ChatGPT subscription (gpt-5.5).';
-      refreshCodexStatus();
+      await codexLinked(flow);
     }
   }, (d.interval || 5) * 1000);
-};
+}
 
 $("codex-import").onclick = async () => {
   const r = await fetch("/api/codex/import", { method: "POST" }).then((x) => x.json());

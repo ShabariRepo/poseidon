@@ -10,6 +10,7 @@ Auth is OpenAI's own device flow (NOT RFC 8628). v1 handles text + tool calls;
 images/reasoning-replay are intentionally out of scope. Needs a live login to
 validate end-to-end.
 """
+import asyncio
 import base64
 import json
 import time
@@ -136,6 +137,164 @@ async def device_poll(device_auth_id: str, user_code: str) -> dict:
         return {"status": "pending"}
     _store(d["access_token"], d.get("refresh_token", ""), d.get("id_token", ""))
     return {"status": "authorized", "account_id": _account_id_from_id_token(d.get("id_token", ""))}
+
+
+# ---------- browser OAuth (authorization-code + PKCE) ----------
+# What `codex login` itself does: open {ISSUER}/oauth/authorize in the
+# browser, catch the redirect on a loopback listener (the client's registered
+# ports), exchange the code. Needs NO account setting — unlike the device
+# flow, which is an OpenAI beta that's off by default. This is the primary
+# path; the device flow stays for headless/remote boxes.
+AUTHORIZE_URL = f"{ISSUER}/oauth/authorize"
+BROWSER_PORTS = (1455, 1457)  # registered loopback redirect ports
+BROWSER_TIMEOUT = 600
+
+_browser: dict = {"status": "idle"}  # one flow at a time
+
+
+def browser_status() -> dict:
+    return {"status": _browser.get("status", "idle"),
+            "error": _browser.get("error", "")}
+
+
+async def _browser_close():
+    server = _browser.pop("server", None)
+    if server:
+        server.close()
+        try:
+            await server.wait_closed()
+        except Exception:
+            pass
+
+
+async def browser_start() -> dict:
+    import hashlib
+    import secrets
+    from urllib.parse import urlencode
+
+    await _browser_close()  # drop any previous flow's listener
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).rstrip(b"=").decode()
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    state = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+
+    server = None
+    port = None
+    for p in BROWSER_PORTS:
+        try:
+            server = await asyncio.start_server(_browser_callback, "127.0.0.1", p)
+            port = p
+            break
+        except OSError:
+            continue
+    if server is None:
+        raise RuntimeError(
+            "ports 1455/1457 are in use (another ChatGPT sign-in running? Codex CLI?) — "
+            "close it and retry, or use the device code")
+
+    redirect_uri = f"http://localhost:{port}/auth/callback"
+    _browser.clear()
+    _browser.update({"status": "waiting", "error": "", "state": state,
+                     "verifier": verifier, "redirect_uri": redirect_uri,
+                     "server": server})
+
+    async def _expire(expected_state: str):
+        await asyncio.sleep(BROWSER_TIMEOUT)
+        if _browser.get("state") == expected_state and _browser.get("status") == "waiting":
+            _browser["status"] = "error"
+            _browser["error"] = "sign-in timed out — try again"
+            await _browser_close()
+
+    asyncio.ensure_future(_expire(state))
+
+    qs = urlencode({
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        # the scope set the Codex CLI itself requests for this client
+        "scope": "openid profile email offline_access",
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "id_token_add_organizations": "true",
+        "codex_cli_simplified_flow": "true",
+        "state": state,
+        "originator": "codex_cli_rs",
+    })
+    return {"auth_url": f"{AUTHORIZE_URL}?{qs}", "status": "waiting"}
+
+
+async def _browser_respond(writer, status: int, message: str):
+    body = (f"<!doctype html><meta charset='utf-8'><title>Poseidon</title>"
+            f"<body style='font-family:system-ui;display:grid;place-items:center;height:90vh'>"
+            f"<div style='text-align:center;max-width:28rem'><div style='font-size:2.4rem'>🔱</div>"
+            f"<p>{message}</p></div></body>").encode()
+    head = (f"HTTP/1.1 {status} {'OK' if status == 200 else 'Error'}\r\n"
+            f"Content-Type: text/html; charset=utf-8\r\nContent-Length: {len(body)}\r\n"
+            f"Connection: close\r\n\r\n").encode()
+    writer.write(head + body)
+    try:
+        await writer.drain()
+    finally:
+        writer.close()
+
+
+async def _browser_callback(reader, writer):
+    from urllib.parse import parse_qs, urlparse
+
+    try:
+        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=10)
+    except Exception:
+        writer.close()
+        return
+    try:
+        request_line = head.split(b"\r\n", 1)[0].decode(errors="replace")
+        parts = request_line.split(" ")
+        target = urlparse(parts[1] if len(parts) > 1 else "/")
+        if target.path != "/auth/callback":
+            await _browser_respond(writer, 404, "Not the sign-in callback.")
+            return
+        q = parse_qs(target.query)
+        if q.get("state", [""])[0] != _browser.get("state"):
+            await _browser_respond(
+                writer, 400, "State mismatch — start the sign-in again from Poseidon.")
+            return
+        code = q.get("code", [""])[0]
+        if not code:
+            err = q.get("error_description", q.get("error", ["sign-in was cancelled"]))[0]
+            _browser["status"] = "error"
+            _browser["error"] = err
+            await _browser_respond(writer, 400, f"Sign-in failed: {err}")
+            await _browser_close()
+            return
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(TOKEN_URL, data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": _browser["redirect_uri"],
+                "client_id": CLIENT_ID,
+                "code_verifier": _browser["verifier"],
+            })
+        if r.status_code >= 400:
+            _browser["status"] = "error"
+            _browser["error"] = f"token exchange failed ({r.status_code})"
+            await _browser_respond(
+                writer, 502, "Token exchange failed — return to Poseidon and try again.")
+            await _browser_close()
+            return
+        d = r.json()
+        _store(d["access_token"], d.get("refresh_token", ""), d.get("id_token", ""))
+        _browser["status"] = "authorized"
+        await _browser_respond(
+            writer, 200, "Signed in — you can close this tab and return to Poseidon.")
+        await _browser_close()
+    except Exception as e:  # never leave the tab hanging
+        _browser["status"] = "error"
+        _browser["error"] = str(e)[:200]
+        try:
+            await _browser_respond(writer, 500, "Something went wrong — return to Poseidon and try again.")
+        except Exception:
+            pass
+        await _browser_close()
 
 
 def import_codex_cli() -> bool:
