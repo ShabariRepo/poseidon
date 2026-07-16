@@ -1,0 +1,94 @@
+name: release
+
+# Tag a version (git tag v0.11.0 && git push --tags) to build:
+#  - the wheel + sdist (and publish to PyPI when trusted publishing is set up)
+#  - standalone Mac + Windows binaries via PyInstaller, attached to the
+#    GitHub Release as download artifacts
+#
+# SIGNING (required before these downloads are linked anywhere public):
+#  - macOS: Developer ID cert + notarytool — see the TODO in build-binaries.
+#    Unsigned builds trip Gatekeeper ("developer cannot be verified").
+#  - Windows: Azure Trusted Signing (or an OV cert) — unsigned builds trip
+#    SmartScreen. Fine for testing, not for the Bonito site.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write # PyPI trusted publishing
+
+jobs:
+  build-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # PyPI via trusted publishing (configure the publisher on pypi.org for
+  # this repo + workflow first; no token needed after that).
+  publish-pypi:
+    needs: build-dist
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  build-binaries:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: poseidon-macos-arm64
+          - os: macos-13
+            artifact: poseidon-macos-x86_64
+          - os: windows-latest
+            artifact: poseidon-windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install . pyinstaller
+      - run: pyinstaller packaging/poseidon.spec
+      # TODO(signing/macos): codesign --deep --options runtime with the
+      # Developer ID cert, then xcrun notarytool submit + stapler.
+      # TODO(signing/windows): Azure Trusted Signing action here.
+      - name: smoke test
+        shell: bash
+        run: ./dist/poseidon/poseidon --version
+      - name: zip
+        shell: bash
+        run: |
+          cd dist && tar -czf ${{ matrix.artifact }}.tar.gz poseidon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.tar.gz
+
+  release:
+    needs: [build-dist, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/dist/*
+            artifacts/poseidon-*/*.tar.gz
+          generate_release_notes: true

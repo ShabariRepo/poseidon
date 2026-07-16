@@ -203,9 +203,25 @@ negative advertising — scope stays small enough to keep alive.
 
 ## Open items
 
-- [ ] GitHub org + remote (`bonito-ai-labs/poseidon`?) — decide handle, push, public from day one
-- [ ] PyPI: register `poseidon-ai` early (squat protection)
-- [ ] Logo / social card (fish + trident)
-- [ ] Security pass before launch: approval-rule patterns review, symlink escape
-      check on the workdir jail, localhost token option
-- [ ] Test suite (the loop, approval broker, path jail — pytest + httpx TestClient)
+**Publish prep done 2026-07-16:** wheel verified (static UI bundles, 47 files),
+cold `pip install` from wheel boots clean, 17-test suite (sandbox + path jail +
+approval broker/trust dial + pattern derivation + config migration + compact
+threshold), gitleaks full-history scan CLEAN (26 commits), repo git identity
+set to the ShabariRepo noreply address, Codex sign-in marked experimental in
+README. CI workflow (pytest matrix) + release workflow (tag → wheel/sdist →
+PyPI trusted publishing → PyInstaller Mac arm64/x86_64 + Windows binaries →
+GitHub Release) + PyInstaller spec in packaging/ — local frozen build verified
+(62MB onedir, boots, UI + static 200). Signing TODOs marked in release.yml.
+Distribution decision: GitHub Releases is the canonical download; the Bonito
+site gets a "Labs" page that links there (keeps the OSS posture).
+
+- [ ] DECIDE: GitHub handle (`bonito-ai-labs/poseidon`?) → transfer, flip public
+- [ ] PyPI: register `poseidon-ai` (verified still free 2026-07-16 — squat risk)
+      + set up trusted publishing for the release workflow
+- [ ] Apple Developer enrollment ($99/yr, days of lead time) + Windows signing
+      (Azure Trusted Signing ~$10/mo) — needed before installers are linked publicly
+- [ ] Codex OAuth live validation (10-min browser session) — shipped as experimental
+- [ ] Logo / social card (fish + trident); README GIF above the fold
+- [ ] Mac menu-bar launcher nicety (v2 of the installer)
+- [ ] Symlink escape review on the workdir jail (resolve() handles the common
+      case — tested; a symlink INSIDE the tree pointing out deserves a look)

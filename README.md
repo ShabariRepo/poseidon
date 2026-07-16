@@ -49,6 +49,13 @@ Any OpenAI-compatible endpoint:
 - **OpenAI**, **Groq**, or any custom endpoint
 - **[Bonito](https://getbonito.com)** — one key for every provider, with failover
   and team-level cost tracking
+- **Your ChatGPT subscription** *(experimental)* — "Sign in with ChatGPT" in
+  Settings uses the Codex device flow, no API key. New and lightly tested;
+  if it misbehaves, any of the endpoints above work.
+
+Each preset carries the model's real context window, so long sessions
+auto-summarize before the model's limit instead of erroring — the meter in
+the toolbar shows how full the session is.
 
 Keys are stored in `~/.poseidon/config.json` on your machine and sent nowhere else.
 
