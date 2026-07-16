@@ -216,6 +216,15 @@ class TurnContext:
                  run_id, emit, unattended):
         self.project = project
         self.workdir = Path(project["workdir"])
+        # Sandbox mode (v0.10): if this session has an active sandbox, point
+        # the tool jail at the clone — files, edits, and command cwd all
+        # follow. The real folder is untouched until promote.
+        self.sandbox = False
+        meta = store.session_meta(session_id) or {}
+        sb = meta.get("sandbox")
+        if sb and Path(sb).is_dir():
+            self.workdir = Path(sb)
+            self.sandbox = True
         self.store = store
         self.runmgr = runmgr
         self.broker = broker
@@ -251,6 +260,12 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
     if not messages:
         messages.append({"role": "system", "content": _build_system_prompt(project, store)})
         store.set_title(session_id, user_message[:80])
+    if ctx.sandbox:
+        note = ("[sandbox mode is ON: file changes go to an isolated copy of the "
+                "project; emails/messages are disabled until the owner promotes "
+                "or discards the sandbox]")
+        if not any(m.get("content") == note for m in messages[-6:]):
+            messages.append({"role": "system", "content": note})
     messages.append({"role": "user", "content": user_message})
     await emit({"type": "turn_started"})
     status, err = "done", ""
@@ -445,10 +460,17 @@ async def _dispatch(ctx, provider, tc, agent, allow_meta) -> dict:
     return result
 
 
+OUTWARD_TOOLS = {"send_email", "slack_post"}
+
+
 async def _execute_tool(ctx, name, args) -> dict:
     spec = TOOLS.get(name)
     if not spec:
         return {"error": f"unknown tool: {name}"}
+    # Nothing leaves a sandbox: outward sends are hard-blocked, not gated.
+    if ctx.sandbox and name in OUTWARD_TOOLS:
+        return {"error": "sandbox mode is on — emails and messages are disabled. "
+                         "Promote or discard the sandbox first."}
     if spec["needs_approval"]:
         subject, detail = spec["subject"](args)
         decision = await ctx.broker.request(ctx.emit, name, subject, detail, unattended=ctx.unattended)
@@ -460,15 +482,17 @@ async def _execute_tool(ctx, name, args) -> dict:
     try:
         rel = str(args.get("path") or "")
         target = (ctx.workdir / rel).resolve() if rel else None
-        # before touching a file, capture any outside edits so nothing is lost
-        if name in VERSIONED_TOOLS and target and target.is_file():
+        # Version snapshots track the REAL folder only — sandbox work enters
+        # history at promote time, so main history never mixes with drafts.
+        if name in VERSIONED_TOOLS and not ctx.sandbox and target and target.is_file():
+            # before touching a file, capture any outside edits so nothing is lost
             ctx.versions.capture_external(ctx.project["id"], target, rel)
         result = await spec["handler"](args, {"workdir": ctx.workdir, "project_id": ctx.project["id"]})
         if name in GATED_TOOLS and "error" not in result:
             ctx.gated_executed = True
             if target:
                 ctx.touched_files.add(str(target))
-        if name in VERSIONED_TOOLS and "error" not in result and target:
+        if name in VERSIONED_TOOLS and not ctx.sandbox and "error" not in result and target:
             vid = ctx.versions.snapshot(ctx.project["id"], target, rel, "agent",
                                         ctx.member_id, ctx.run_id, ctx.label)
             if vid:

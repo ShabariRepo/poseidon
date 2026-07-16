@@ -95,6 +95,7 @@ class Store:
         for col, decl in [
             ("project_id", "TEXT"), ("member_id", "TEXT"),
             ("progress", "TEXT DEFAULT ''"), ("updated", "REAL"),
+            ("sandbox", "TEXT"),  # active sandbox path (v0.10 sandbox mode)
         ]:
             if col not in cols:
                 c.execute(f"ALTER TABLE sessions ADD COLUMN {col} {decl}")
@@ -203,10 +204,15 @@ class Store:
     def session_meta(self, sid: str) -> dict | None:
         r = self._db.execute(
             """SELECT id, created, updated, title, progress, project_id, member_id,
-                      tokens_in, tokens_out, cost, priced FROM sessions WHERE id=?""",
+                      tokens_in, tokens_out, cost, priced, sandbox
+               FROM sessions WHERE id=?""",
             (sid,),
         ).fetchone()
         return dict(r) if r else None
+
+    def set_sandbox(self, sid: str, path: str | None):
+        self._exec("UPDATE sessions SET sandbox=?, updated=? WHERE id=?",
+                   (path, _now(), sid))
 
     def exists(self, sid: str) -> bool:
         return self.session_meta(sid) is not None

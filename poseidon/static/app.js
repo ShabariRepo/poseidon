@@ -120,6 +120,7 @@ async function newSession() {
   $("messages").innerHTML = "";
   $("session-title").textContent = "new session";
   updateContext(null);
+  setSandboxUI(false);
   clearActivityAndTasks();
   openEvents();
 }
@@ -136,6 +137,7 @@ async function openSession(sid) {
   if (s.progress) addProgressChip(s.progress);
   updateCost({ cost: s.cost, tokens_in: s.tokens_in, tokens_out: s.tokens_out, priced: !!s.priced });
   updateContext(s.context);
+  setSandboxUI(!!s.sandbox);
   openEvents();
   $("session-drawer").hidden = true;
 }
@@ -221,6 +223,10 @@ function handleEvent(ev) {
     case "approval_required": if (mine) { setThinking(false); renderApproval(ev); } break;
     case "cost_update": if (mine) updateCost(ev); break;
     case "context": if (mine) updateContext(ev); break;
+    case "sandbox":
+      if (mine && ev.state === "on") setSandboxUI(true);
+      if (mine && (ev.state === "promoted" || ev.state === "discarded")) setSandboxUI(false);
+      break;
     case "checkpoint_saved": if (mine) addChip(`📍 checkpoint saved${ev.auto ? " (auto)" : ""}`); break;
     case "work_update":
       if (document.querySelector(".tab.active")?.dataset.tab === "board") loadBoard();
@@ -848,6 +854,105 @@ document.addEventListener("click", (e) => {
   const tip = $("ctx-tip");
   if (!tip.hidden && !tip.contains(e.target)) tip.hidden = true;
 });
+
+/* ---------- sandbox (v0.10: branches for non-devs) ---------- */
+function setSandboxUI(active) {
+  state.sandbox = !!active;
+  const btn = $("sandbox-btn");
+  btn.textContent = active ? "🧪 Review sandbox" : "🧪 Sandbox";
+  btn.classList.toggle("sandbox-on", !!active);
+  btn.title = active
+    ? "Sandbox is on — every change goes to an isolated copy. Click to review, promote, or discard."
+    : "Work in an isolated copy of the project — promote what you like, discard the rest";
+}
+
+$("sandbox-btn").onclick = async () => {
+  if (!state.sessionId) return;
+  if (!state.sandbox) {
+    const r = await fetch(`/api/sessions/${state.sessionId}/sandbox`, { method: "POST" });
+    if (!r.ok) {
+      const b = await r.json().catch(() => ({}));
+      addChip(`🧪 couldn't start a sandbox: ${b.detail || r.status}`);
+      return;
+    }
+    setSandboxUI(true);
+    addChip("🧪 sandbox on — changes go to an isolated copy; nothing touches your real files until you promote");
+    return;
+  }
+  openSandboxReview();
+};
+
+async function openSandboxReview() {
+  const st = await fetch(`/api/sessions/${state.sessionId}/sandbox`).then((r) => r.json());
+  if (!st.active) { setSandboxUI(false); return; }
+  $("drill-title").textContent = "🧪 Sandbox — working tree";
+  const section = (label, rels, cls) =>
+    rels.length
+      ? `<div class="sb-section">${label}</div>` + rels.map((rel) => `
+          <div class="sb-row" data-rel="${esc(rel)}">
+            <input type="checkbox" class="sb-pick" data-rel="${esc(rel)}" ${cls === "del" ? "" : "checked"} />
+            <span class="sb-chip ${cls}">${cls === "add" ? "new" : cls === "chg" ? "changed" : "deleted"}</span>
+            <span class="sb-path">${esc(rel)}</span>
+            ${st.conflicts.includes(rel) ? '<span class="sb-conflict" title="This file also changed in the real folder since the sandbox started — promoting overwrites that">⚠ conflict</span>' : ""}
+          </div>
+          <div class="sb-diff" data-rel="${esc(rel)}" hidden></div>`).join("")
+      : "";
+  $("drill-body").innerHTML = st.clean
+    ? '<div class="feed-empty">Nothing changed in the sandbox yet.</div>' +
+      '<div class="sb-actions"><button class="ghost mini" id="sb-discard">Discard sandbox</button></div>'
+    : section("Added", st.added, "add") +
+      section("Changed", st.changed, "chg") +
+      section("Deleted", st.deleted, "del") +
+      `<div class="sb-actions">
+         <button id="sb-promote">Promote selected to main</button>
+         <button class="ghost mini" id="sb-discard">Discard sandbox</button>
+       </div>
+       <p class="muted sb-note">Promoting applies the selected changes to your real files — each one is versioned first, so promotion is reversible file by file. Discard deletes the sandbox copy; your real files are untouched either way.</p>`;
+
+  for (const row of document.querySelectorAll(".sb-row")) {
+    row.querySelector(".sb-path").onclick = async () => {
+      const rel = row.dataset.rel;
+      const box = document.querySelector(`.sb-diff[data-rel="${CSS.escape(rel)}"]`);
+      if (!box.hidden) { box.hidden = true; return; }
+      const d = await fetch(`/api/sessions/${state.sessionId}/sandbox/diff?path=${encodeURIComponent(rel)}`).then((r) => r.json());
+      box.innerHTML = d.binary
+        ? '<span class="muted">binary file — no preview</span>'
+        : d.lines.map((l) => `<div class="dline ${l.t}">${esc(l.s)}</div>`).join("") || '<span class="muted">no text changes</span>';
+      box.hidden = false;
+    };
+  }
+  const promoteBtn = document.querySelector("#sb-promote");
+  if (promoteBtn)
+    promoteBtn.onclick = async () => {
+      const files = [...document.querySelectorAll(".sb-pick:checked")].map((c) => c.dataset.rel);
+      if (!files.length) return;
+      promoteBtn.disabled = true;
+      const r = await fetch(`/api/sessions/${state.sessionId}/sandbox/promote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files, member_id: state.memberId }),
+      });
+      const res = await r.json().catch(() => ({}));
+      $("drill-overlay").hidden = true;
+      if (r.ok) {
+        setSandboxUI(false);
+        const n = (res.promoted || []).length;
+        const d = (res.removed || []).length;
+        addChip(`✅ promoted ${n} file${n === 1 ? "" : "s"}${d ? ` (+${d} deletion${d === 1 ? "" : "s"})` : ""} to main — sandbox closed`);
+        loadFiles(state.currentPath);
+      } else {
+        addChip(`🧪 promote failed: ${res.detail || r.status}`);
+      }
+    };
+  document.querySelector("#sb-discard").onclick = async () => {
+    if (!confirm("Discard the sandbox? Everything done in it is thrown away; your real files are untouched.")) return;
+    await fetch(`/api/sessions/${state.sessionId}/sandbox/discard`, { method: "POST" });
+    $("drill-overlay").hidden = true;
+    setSandboxUI(false);
+    addChip("🗑 sandbox discarded — your real files were never touched");
+  };
+  $("drill-overlay").hidden = false;
+}
 
 /* ---------- tabs ---------- */
 const PANE_LOADERS = { board: loadBoard, pipeline: refreshPipeline, schedules: loadSchedules, checkpoints: loadCheckpoints, memory: loadMemory, team: loadTeam, files: () => loadFiles(state.currentPath) };

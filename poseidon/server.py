@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from . import memory as memory_store
+from . import sandbox as sandbox_mod
 from .approvals import ApprovalBroker
 from .config import CONFIG_DIR, PRESETS, load_config, save_config
 from .orchestrator import _estimate_tokens, compact_threshold, engine_settings, run_turn
@@ -349,6 +350,82 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         return {**meta, "messages": [{"role": m["role"], "content": m["content"]} for m in msgs],
                 "context": {"tokens": _estimate_tokens(raw),
                             "limit": compact_threshold(engine_settings())}}
+
+    # ---------- sandbox (v0.10: branches for non-devs) ----------
+    def _session_sandbox(sid: str):
+        meta = store.session_meta(sid)
+        if not meta:
+            raise HTTPException(404, "unknown session")
+        project = project_or_404(meta["project_id"])
+        sb = meta.get("sandbox")
+        return meta, project, (Path(sb) if sb else None)
+
+    @app.post("/api/sessions/{sid}/sandbox")
+    async def sandbox_create(sid: str):
+        meta, project, sb = _session_sandbox(sid)
+        if sb and sb.is_dir():
+            raise HTTPException(409, "this session already has a sandbox")
+        if sid in busy:
+            raise HTTPException(409, "wait for the current turn to finish")
+        dest = await asyncio.to_thread(
+            sandbox_mod.clone, project["id"], Path(project["workdir"]), sid)
+        store.set_sandbox(sid, str(dest))
+        runmgr.publish({"type": "sandbox", "session_id": sid, "project_id": project["id"],
+                        "state": "on"})
+        return {"ok": True, "sandbox": str(dest)}
+
+    @app.get("/api/sessions/{sid}/sandbox")
+    async def sandbox_status(sid: str):
+        meta, project, sb = _session_sandbox(sid)
+        if not sb or not sb.is_dir():
+            return {"active": False}
+        st = await asyncio.to_thread(
+            sandbox_mod.status, Path(project["workdir"]), sb)
+        return {"active": True, "sandbox": str(sb), **st}
+
+    @app.get("/api/sessions/{sid}/sandbox/diff")
+    async def sandbox_diff(sid: str, path: str):
+        meta, project, sb = _session_sandbox(sid)
+        if not sb or not sb.is_dir():
+            raise HTTPException(404, "no active sandbox")
+        # jail the requested path to the sandbox
+        target = (sb / path).resolve()
+        if not target.is_relative_to(sb.resolve()):
+            raise HTTPException(422, "path escapes the sandbox")
+        return await asyncio.to_thread(
+            sandbox_mod.diff_file, Path(project["workdir"]), sb, path)
+
+    @app.post("/api/sessions/{sid}/sandbox/promote")
+    async def sandbox_promote(sid: str, body: dict | None = None):
+        meta, project, sb = _session_sandbox(sid)
+        if not sb or not sb.is_dir():
+            raise HTTPException(404, "no active sandbox")
+        if sid in busy:
+            raise HTTPException(409, "wait for the current turn to finish")
+        files = (body or {}).get("files")
+        member_id = (body or {}).get("member_id") or meta.get("member_id") or "owner"
+        result = await asyncio.to_thread(
+            sandbox_mod.promote, project["id"], Path(project["workdir"]), sb,
+            versions, member_id, files if isinstance(files, list) else None)
+        sandbox_mod.discard(sb)
+        store.set_sandbox(sid, None)
+        runmgr.publish({"type": "sandbox", "session_id": sid, "project_id": project["id"],
+                        "state": "promoted", "promoted": len(result["promoted"]),
+                        "removed": len(result["removed"])})
+        return result
+
+    @app.post("/api/sessions/{sid}/sandbox/discard")
+    async def sandbox_discard(sid: str):
+        meta, project, sb = _session_sandbox(sid)
+        if not sb:
+            raise HTTPException(404, "no active sandbox")
+        if sid in busy:
+            raise HTTPException(409, "wait for the current turn to finish")
+        sandbox_mod.discard(sb)
+        store.set_sandbox(sid, None)
+        runmgr.publish({"type": "sandbox", "session_id": sid, "project_id": project["id"],
+                        "state": "discarded"})
+        return {"ok": True}
 
     # ---------- chat ----------
     @app.post("/api/chat")

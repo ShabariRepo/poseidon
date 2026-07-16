@@ -162,6 +162,21 @@ in Settings → Provider, default 200k). Effective threshold =
 summarizer dump cap, and the context meter's limit, so Groq llama compacts at
 ~129k instead of erroring at the provider before 198k.
 
+**v0.10 — sandbox mode ✅ (shipped 2026-07-16):** branches for non-developers,
+completing the "git for non-devs" story (versions = commits, sandbox = branch,
+promote = merge, working tree = git status). Per-session 🧪 toggle clones the
+project folder copy-on-write (APFS clonefile / reflink, shutil fallback) into
+~/.poseidon/sandboxes/ and swaps the tool jail to the clone — files, edits,
+and command cwd all follow; the real folder is untouched. Outward sends
+(email/Slack) are HARD-blocked in a sandbox. Working-tree review overlay:
+added/changed/deleted chips, conflict flags (real folder moved underneath),
+per-file inline diffs, per-file checkboxes → Promote (applies through the
+version store, so the merge itself is reversible file by file) or Discard.
+Sandbox writes skip main version history — drafts enter history only at
+promotion. Also the repo's FIRST test suite: tests/test_sandbox.py (8 tests —
+clone/status/diff/promote/conflicts/discard-jail). Versions reconciled to
+0.10.0 in both pyproject.toml and __init__.py (publish prep).
+
 **v0.5.x — server mode:** `poseidon serve` on a shared box (per-member tokens,
 TLS guidance) so teams use one instance from their browsers; Duncan-Lane-scale
 external integrations (gmail/slack connectors as tools).
