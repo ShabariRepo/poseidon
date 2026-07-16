@@ -1062,11 +1062,21 @@ $("codex-signin").onclick = async () => {
   flow.hidden = false;
   flow.innerHTML = "Starting…";
   const r = await fetch("/api/codex/start", { method: "POST" });
-  if (!r.ok) { flow.textContent = (await r.json().catch(() => ({}))).detail || "failed to start"; return; }
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => ({}))).detail;
+    flow.textContent = detail && detail !== "Not Found"
+      ? detail
+      : `Couldn't start the sign-in (HTTP ${r.status}). If you're running an older Poseidon, update and restart it.`;
+    return;
+  }
   const d = await r.json();
-  flow.innerHTML = `Go to <a href="${esc(d.verify_url)}" target="_blank" rel="noopener">${esc(d.verify_url)}</a>
-    and enter code <b class="codex-code">${esc(d.user_code)}</b> — then use your ChatGPT model here.
-    <div class="muted" id="codex-poll-note">waiting for you to authorize…</div>`;
+  flow.innerHTML = `<b>First, one ChatGPT setting:</b> device code login is an OpenAI beta that's
+    <i>off by default</i>. In ChatGPT go to <b>Settings → Security → Device code login</b> and turn it on
+    (workspace accounts: your admin enables it under workspace permissions). Skip this if you've done it before.
+    <br /><br />Then go to <a href="${esc(d.verify_url)}" target="_blank" rel="noopener">${esc(d.verify_url)}</a>
+    (signed in to chatgpt.com in that browser) and enter code <b class="codex-code">${esc(d.user_code)}</b>.
+    <div class="muted" id="codex-poll-note">waiting for you to authorize… (if that page shows "not found",
+    the setting above is still off)</div>`;
   window.open(d.verify_url, "_blank");
   clearInterval(codexPoll);
   codexPoll = setInterval(async () => {

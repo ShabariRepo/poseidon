@@ -50,8 +50,12 @@ Any OpenAI-compatible endpoint:
 - **[Bonito](https://getbonito.com)** — one key for every provider, with failover
   and team-level cost tracking
 - **Your ChatGPT subscription** *(experimental)* — "Sign in with ChatGPT" in
-  Settings uses the Codex device flow, no API key. New and lightly tested;
-  if it misbehaves, any of the endpoints above work.
+  Settings uses the Codex device flow, no API key. Two prerequisites: OpenAI's
+  device code login is a beta that's **off by default** — enable it in ChatGPT
+  → Settings → Security → "Device code login" (workspace accounts: your admin
+  turns it on), and be signed in to chatgpt.com in the browser you authorize
+  with. If the code page shows "not found", that setting is still off. New and
+  lightly tested; if it misbehaves, any of the endpoints above work.
 
 Each preset carries the model's real context window, so long sessions
 auto-summarize before the model's limit instead of erroring — the meter in
