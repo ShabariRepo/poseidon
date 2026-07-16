@@ -14,7 +14,7 @@ from . import __version__
 from . import memory as memory_store
 from .approvals import ApprovalBroker
 from .config import CONFIG_DIR, PRESETS, load_config, save_config
-from .orchestrator import _estimate_tokens, engine_settings, run_turn
+from .orchestrator import _estimate_tokens, compact_threshold, engine_settings, run_turn
 from .runs import RunManager
 from .scheduler import Scheduler
 from .store import Store
@@ -87,6 +87,7 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             "workdir": str(workdir),
             "configured": bool(provider and provider.get("base_url")),
             "provider": ({"base_url": provider.get("base_url", ""), "model": provider.get("model", ""),
+                          "context_window": provider.get("context_window"),
                           "has_key": bool(provider.get("api_key"))} if provider else None),
             "presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in PRESETS.items()},
             "approval_rules": cfg.get("approvals", {}).get("rules", []),
@@ -114,6 +115,11 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             raise HTTPException(422, "base_url and model are required")
         cfg = load_config()
         cfg["provider"] = {"base_url": base_url, "api_key": (body.get("api_key") or "").strip(), "model": model}
+        if body.get("context_window") is not None:
+            try:
+                cfg["provider"]["context_window"] = max(4000, min(2_000_000, int(body["context_window"])))
+            except (TypeError, ValueError):
+                pass  # invalid → fall back to the 200k default downstream
         save_config(cfg)
         return {"ok": True}
 
@@ -342,7 +348,7 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
                     or (m.get("role") == "assistant" and m.get("content")))]
         return {**meta, "messages": [{"role": m["role"], "content": m["content"]} for m in msgs],
                 "context": {"tokens": _estimate_tokens(raw),
-                            "limit": engine_settings()["compact_tokens"]}}
+                            "limit": compact_threshold(engine_settings())}}
 
     # ---------- chat ----------
     @app.post("/api/chat")

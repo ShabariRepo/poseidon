@@ -153,6 +153,15 @@ red ≥90%), click for a plain-language explainer with live token counts. Fed by
 `context` SSE event each turn + the session endpoint on load. Small-window
 models (Groq llama ~131k) should lower the threshold in Settings → Engine.
 
+**v0.9.2 — per-provider context window ✅ (shipped 2026-07-16):** the compact
+threshold now adapts to the model's real window instead of assuming 200k.
+Provider config gains an optional `context_window` (presets ship sensible
+values: OpenAI 128k, Groq 131k, Ollama 32k conservative, Bonito 200k; settable
+in Settings → Provider, default 200k). Effective threshold =
+`min(compact_tokens, window − 2k)` (8k floor) — used by auto-summary, the
+summarizer dump cap, and the context meter's limit, so Groq llama compacts at
+~129k instead of erroring at the provider before 198k.
+
 **v0.5.x — server mode:** `poseidon serve` on a shared box (per-member tokens,
 TLS guidance) so teams use one instance from their browsers; Duncan-Lane-scale
 external integrations (gmail/slack connectors as tools).

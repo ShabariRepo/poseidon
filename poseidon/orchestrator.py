@@ -76,6 +76,13 @@ def engine_settings() -> dict:
     }
 
 
+def compact_threshold(settings) -> int:
+    """Effective compaction line: the configured compact_tokens, clamped so it
+    fires before the provider's context window (2k headroom, 8k floor)."""
+    window = int((load_config().get("provider") or {}).get("context_window") or 200000)
+    return min(settings["compact_tokens"], max(8000, window - 2000))
+
+
 async def _chat_completion(provider, messages, tools, retries=2):
     """Providers hiccup (rate limits, malformed tool-call generations on
     smaller models) — retry with backoff before failing the whole turn."""
@@ -270,7 +277,7 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
         # feed the context meter: how full is this session vs the compact line
         try:
             await emit({"type": "context", "tokens": _estimate_tokens(messages),
-                        "limit": engine_settings()["compact_tokens"]})
+                        "limit": compact_threshold(engine_settings())})
         except Exception:
             pass
         await emit({"type": "turn_complete"})
@@ -278,7 +285,8 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
 
 
 async def _maybe_compact(ctx, provider, messages, settings) -> list:
-    if _estimate_tokens(messages) < settings["compact_tokens"] or len(messages) < 12:
+    threshold = compact_threshold(settings)
+    if _estimate_tokens(messages) < threshold or len(messages) < 12:
         return messages
     boundary = max(1, len(messages) - settings["keep_recent"])
     while boundary > 1 and messages[boundary].get("role") != "user":
@@ -288,7 +296,7 @@ async def _maybe_compact(ctx, provider, messages, settings) -> list:
     old, recent = messages[1:boundary], messages[boundary:]
     # The summarizer call must itself fit the model's window: cap the dump at
     # ~3 chars per threshold token (well under the window that threshold implies).
-    dump = json.dumps(old)[: min(600_000, settings["compact_tokens"] * 3)]
+    dump = json.dumps(old)[: min(600_000, threshold * 3)]
     try:
         data = await _chat_completion(provider, [
             {"role": "system", "content": "Summarize this agent conversation history into a dense progress brief: what was asked, what was done (files, commands, results), decisions made, open items. Keep every fact needed to continue the work."},

@@ -879,11 +879,13 @@ function fillPresets(s) {
     const p = s.presets[sel.value];
     $("cfg-base-url").value = p.base_url || "";
     $("cfg-model").value = p.model || "";
+    $("cfg-context-window").value = p.context_window || "";
     $("cfg-api-key").value = "";
   };
   if (s.provider) {
     $("cfg-base-url").value = s.provider.base_url;
     $("cfg-model").value = s.provider.model;
+    $("cfg-context-window").value = s.provider.context_window || "";
   } else {
     sel.value = "ollama";
     sel.onchange();
@@ -1003,8 +1005,9 @@ $("cfg-save").onclick = async (e) => {
   const base_url = $("cfg-base-url").value.trim();
   const model = $("cfg-model").value.trim();
   if (base_url && model) {
+    const context_window = parseInt($("cfg-context-window").value, 10) || undefined;
     await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base_url, api_key: $("cfg-api-key").value, model }) });
+      body: JSON.stringify({ base_url, api_key: $("cfg-api-key").value, model, context_window }) });
   }
   const r = await fetch("/api/settings/engine", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ compact_tokens: +$("eng-compact").value, keep_recent: +$("eng-keep").value,

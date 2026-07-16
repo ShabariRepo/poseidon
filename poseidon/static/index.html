@@ -8,7 +8,7 @@
   <link rel="manifest" href="/static/manifest.json" />
   <meta name="theme-color" content="#0f7fa8" />
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
-  <link rel="stylesheet" href="/static/style.css?v=091" />
+  <link rel="stylesheet" href="/static/style.css?v=092" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
@@ -137,6 +137,7 @@
     <label>Base URL <input id="cfg-base-url" placeholder="https://api.openai.com/v1" /></label>
     <label>API key <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" /></label>
     <label>Model <input id="cfg-model" placeholder="gpt-4o-mini" /></label>
+    <label>Context window (tokens) <input id="cfg-context-window" type="number" placeholder="200000" /></label>
     <h3>Engine</h3>
     <div class="settings-grid">
       <label>Compact context above (tokens) <input id="eng-compact" type="number" min="4000" max="200000" step="1000" /></label>
@@ -183,6 +184,6 @@
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=091"></script>
+  <script src="/static/app.js?v=092"></script>
 </body>
 </html>

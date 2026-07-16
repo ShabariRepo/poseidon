@@ -13,24 +13,28 @@ PRESETS = {
         "base_url": "http://localhost:11434/v1",
         "api_key": "ollama",
         "model": "hermes3",
+        "context_window": 32768,  # conservative: local models vary widely
     },
     "openai": {
         "label": "OpenAI",
         "base_url": "https://api.openai.com/v1",
         "api_key": "",
         "model": "gpt-4o-mini",
+        "context_window": 128000,
     },
     "groq": {
         "label": "Groq",
         "base_url": "https://api.groq.com/openai/v1",
         "api_key": "",
         "model": "llama-3.3-70b-versatile",
+        "context_window": 131072,
     },
     "bonito": {
         "label": "Bonito Gateway (one key, every provider)",
         "base_url": "https://api.getbonito.com/v1",
         "api_key": "",
         "model": "claude-sonnet-4-6",
+        "context_window": 200000,
     },
     "custom": {
         "label": "Custom (any OpenAI-compatible endpoint)",
@@ -50,7 +54,8 @@ DEFAULT_CONFIG = {
     "engine": {
         # Auto-summarize the session above this estimate. Default assumes a
         # 200k-context model (Claude/GPT-4.1 class) with headroom for the reply;
-        # turn it down in Settings for small-window models (llama on Groq: ~100k).
+        # the effective threshold is clamped to the provider's context_window
+        # (see orchestrator.compact_threshold), so small-window models compact earlier.
         "compact_tokens": 198000,
         "keep_recent": 8,          # messages kept verbatim through compaction
         "auto_checkpoint": True,   # checkpoint after write/run turns
