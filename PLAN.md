@@ -177,6 +177,24 @@ promotion. Also the repo's FIRST test suite: tests/test_sandbox.py (8 tests —
 clone/status/diff/promote/conflicts/discard-jail). Versions reconciled to
 0.10.0 in both pyproject.toml and __init__.py (publish prep).
 
+**v0.10.x — UI professional pass ✅ (2026-07-18):** CSS-first visual polish to
+compete with modern dev tools (Linear/shadcn-calibre). One coherent component
+system replacing the layered refinement passes: real type scale (10–17px,
+500/600 weights, letter-spaced small-caps section labels, tabular-nums on all
+meters/timestamps), uniform control heights (30px header controls / 28px mini /
+34px default / 42px composer), consistent radii (8px controls, 10px cards, 16px
+dialogs), color-mix borders + subtle two-layer shadows with hover elevation on
+interactive cards, :focus-visible rings, first-class composer focus glow.
+Settings dialog rebuilt: scrollable body + sticky footer, backdrop blur/dim,
+divided sections, styled inputs. Dock: monochrome-at-rest icons, accent-soft
+active pill (no bouncy hover). Thin styled scrollbars, centered empty states,
+hidden-until-hover board card controls. Fixed 3 real bugs: trek skin dock
+labels were unreadable (`button` color override out-specified `.tab`),
+`[hidden]` elements shown (display reset beat the UA rule — Sign-out button
+leaked into Settings), and focus rings drawn on scroll containers. All 4 skins
+verified via Playwright screenshots; skin var contract untouched; app.js
+untouched; 17 tests green.
+
 **v0.5.x — server mode:** `poseidon serve` on a shared box (per-member tokens,
 TLS guidance) so teams use one instance from their browsers; Duncan-Lane-scale
 external integrations (gmail/slack connectors as tools).

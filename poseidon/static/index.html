@@ -8,14 +8,14 @@
   <link rel="manifest" href="/static/manifest.json" />
   <meta name="theme-color" content="#0f7fa8" />
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
-  <link rel="stylesheet" href="/static/style.css?v=0102" />
+  <link rel="stylesheet" href="/static/style.css?v=0110" />
 </head>
 <body>
   <div id="scene" aria-hidden="true"></div>
   <header>
     <div class="brand">🔱 <strong>Poseidon</strong>
       <select id="project-select" class="chip-select" title="Project"></select>
-      <button id="new-project-btn" class="ghost mini" title="New project">＋</button>
+      <button id="new-project-btn" class="ghost icon-btn" title="New project">＋</button>
     </div>
     <div class="header-right">
       <select id="skin-select" class="chip-select" title="Skin">
@@ -26,7 +26,7 @@
       </select>
       <span id="cost" class="cost" title="Session cost (tokens in/out)">$0.0000</span>
       <select id="member-select" class="chip-select member" title="Who are you?"></select>
-      <button id="settings-btn" class="ghost" title="Settings">⚙</button>
+      <button id="settings-btn" class="ghost icon-btn" title="Settings">⚙︎</button>
     </div>
   </header>
 
@@ -55,7 +55,7 @@
         small-context models).</p>
       </div>
       <div id="session-drawer" class="drawer" hidden>
-        <div class="drawer-head">Sessions <button class="ghost mini" id="drawer-close">✕</button></div>
+        <div class="drawer-head">Sessions <button class="ghost icon-btn" id="drawer-close" title="Close">✕</button></div>
         <div id="session-list"></div>
       </div>
       <div id="messages"></div>
@@ -108,7 +108,7 @@
       </div>
       <div id="drill-overlay" class="drill" hidden>
         <div class="drill-card">
-          <div class="drill-head"><span id="drill-title"></span><button class="ghost mini" id="drill-close">✕</button></div>
+          <div class="drill-head"><span id="drill-title"></span><button class="ghost icon-btn" id="drill-close" title="Close">✕</button></div>
           <div id="drill-body"></div>
         </div>
       </div>
@@ -122,6 +122,7 @@
 
   <dialog id="settings-modal">
     <h2>Settings</h2>
+    <div class="dialog-body">
     <h3>Provider</h3>
     <p class="muted">Any OpenAI-compatible endpoint works. Keys never leave this machine.</p>
     <div id="codex-box" class="codex-box">
@@ -167,6 +168,7 @@
     <p class="muted" id="int-status"></p>
     <h3>Always-allow rules</h3>
     <div id="rules-list" class="rules-list"><span class="muted">None yet — approve something with "Always allow".</span></div>
+    </div>
     <div class="modal-actions">
       <button id="cfg-save">Save</button>
       <button class="ghost" id="cfg-cancel">Close</button>
@@ -175,6 +177,7 @@
 
   <dialog id="about-modal">
     <h2>🔱 Poseidon</h2>
+    <div class="dialog-body">
     <p>An open-source agent harness that runs on your machine and opens as a chat.
        Every action is visible, every risky step asks first, and the meter always
        shows what you're spending.</p>
@@ -182,9 +185,10 @@
        <a href="https://getbonito.com" target="_blank" rel="noopener">Bonito</a>,
        an AI gateway for teams: one key for every provider, failover, cost tracking,
        and governance.</p>
+    </div>
     <div class="modal-actions"><button class="ghost" id="about-close">Close</button></div>
   </dialog>
 
-  <script src="/static/app.js?v=0102"></script>
+  <script src="/static/app.js?v=0110"></script>
 </body>
 </html>
