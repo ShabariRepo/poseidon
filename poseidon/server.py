@@ -86,8 +86,9 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         return {
             "version": __version__,
             "workdir": str(workdir),
-            "configured": bool(provider and provider.get("base_url")),
-            "provider": ({"base_url": provider.get("base_url", ""), "model": provider.get("model", ""),
+            "configured": bool(provider and (provider.get("base_url") or provider.get("type") == "codex")),
+            "provider": ({"type": provider.get("type", ""),
+                          "base_url": provider.get("base_url", ""), "model": provider.get("model", ""),
                           "context_window": provider.get("context_window"),
                           "has_key": bool(provider.get("api_key"))} if provider else None),
             "presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in PRESETS.items()},

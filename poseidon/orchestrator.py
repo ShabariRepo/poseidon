@@ -264,7 +264,10 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
     label = user_message[:120]
     run_id = runmgr.start(project["id"], session_id, None, kind, label)
     emit = runmgr.emitter(project["id"], session_id, run_id)
-    if not provider or not provider.get("base_url"):
+    # a provider is usable with a base_url (OpenAI-compatible) OR type=codex
+    # (ChatGPT subscription — legitimately has no base_url). Requiring base_url
+    # alone made every codex turn die with "no provider" (found in QA 2026-07-20).
+    if not provider or not (provider.get("base_url") or provider.get("type") == "codex"):
         await emit({"type": "error", "message": "No provider configured — open Settings."})
         runmgr.finish(project["id"], session_id, run_id, "error", "no provider")
         return
@@ -380,9 +383,16 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
     # failover chain: primary + any configured fallbacks (the Bonito habit)
     providers = [provider] + fallback_providers(load_config())
 
+    # sticky within the turn: once a provider serves, later iterations start
+    # there instead of re-failing the dead primary every loop (QA 2026-07-20:
+    # one 401 primary produced 5 duplicate failover events + retry latency).
+    active = 0
+
     async def complete():
+        nonlocal active
         last = None
-        for i, prov in enumerate(providers):
+        for i in range(active, len(providers)):
+            prov = providers[i]
             try:
                 try:
                     d = await _chat_completion_stream(prov, messages, schemas, on_delta)
@@ -392,15 +402,19 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
                         raise
                     d = await _chat_completion(prov, messages, schemas,
                                                retries=1 if i < len(providers) - 1 else 2)
-                if i:
+                if i != active:
                     await ctx.emit({"type": "failover", "model": prov["model"],
                                     "base_url": prov.get("base_url", "")})
+                    active = i
                 return d, prov
-            except RuntimeError as e:
+            # transport errors (DNS dead, connection refused, TLS, timeouts)
+            # MUST fail over too — a provider that is fully DOWN is the case
+            # failover exists for (QA 2026-07-20: httpx errors bubbled uncaught).
+            except (RuntimeError, httpx.HTTPError, OSError) as e:
                 if any(m in str(e) for m in _MALFORMED_MARKERS):
                     raise
                 last = e
-        raise last
+        raise last if last else RuntimeError("no usable provider")
 
     for _ in range(max_iter):
         try:

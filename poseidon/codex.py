@@ -397,7 +397,10 @@ async def responses_request(model: str, messages: list, tools: list | None,
     {choices:[{message}], usage} so the orchestrator loop is unchanged."""
     tokens = await _valid_tokens()
     instructions, items = _to_responses(messages)
-    body = {"model": model, "instructions": instructions, "input": items, "stream": True}
+    # store=False is REQUIRED by the ChatGPT-subscription backend (it rejects
+    # storable requests with 400 "Store must be set to false" — QA 2026-07-20).
+    body = {"model": model, "instructions": instructions, "input": items,
+            "stream": True, "store": False}
     rtools = _responses_tools(tools)
     if rtools:
         body["tools"] = rtools
