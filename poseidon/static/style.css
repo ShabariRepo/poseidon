@@ -808,3 +808,7 @@ dialog a { color: var(--accent); }
 .fallback-row input{flex:1;min-width:0;}
 .fallback-row select{max-width:140px;}
 .fallback-row .fb-del{flex:none;}
+
+/* standing-rule override warning under the autonomy dial */
+.mode-warn{margin:6px 0 0;padding:8px 12px;font-size:12.5px;border-radius:8px;
+  background:#fff6e6;border:1px solid #e7cf9a;color:#7a5b12;}

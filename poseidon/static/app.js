@@ -16,12 +16,26 @@ const state = {
 
 const fmtTime = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 const esc = (s) => { const d = document.createElement("span"); d.textContent = s ?? ""; return d.innerHTML; };
+// Minimal, safe inline markdown for assistant bubbles: escape first, THEN
+// apply a tiny subset (bold/italic/code/links/breaks). No raw HTML ever
+// reaches innerHTML unescaped. (QA 2026-07-20: bubbles showed literal **.)
+function renderMd(text) {
+  let h = esc(text ?? "");
+  // fenced/inline code first so ** inside code isn't touched
+  h = h.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
+  h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  h = h.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  h = h.replace(/\b(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer noopener">$1</a>');
+  h = h.replace(/\n/g, "<br>");
+  return h;
+}
 
 /* ---------- boot ---------- */
 async function init() {
   const s = await fetch("/api/state").then((r) => r.json());
   state.totalCost = s.total_cost || 0;
   state.rawFallbacks = s.fallbacks || [];
+  state.providerType = (s.provider && s.provider.type) || "";
   Object.assign(state, { presets: s.presets, engine: s.engine, rules: s.approval_rules,
     projects: s.projects, members: s.members, approvalMode: s.approval_mode });
   $("workdir")?.remove();
@@ -198,7 +212,7 @@ function handleEvent(ev) {
       if (!mine) break;
       setThinking(false);
       if (!ev.agent && state.streamEl) {
-        state.streamEl.textContent = ev.content;
+        state.streamEl.innerHTML = renderMd(ev.content);
         state.streamEl.classList.remove("streaming");
         state.streamEl = null;
       } else {
@@ -287,7 +301,8 @@ $("chat-input").addEventListener("input", (e) => {
 function addMsg(kind, text) {
   const div = document.createElement("div");
   div.className = `msg ${kind}`;
-  div.textContent = text;
+  if (kind === "assistant") div.innerHTML = renderMd(text);
+  else div.textContent = text;
   $("messages").appendChild(div);
   scrollChat();
 }
@@ -830,8 +845,16 @@ function updateCost(ev) {
   const el = $("cost");
   if (typeof ev.total_cost === "number") state.totalCost = ev.total_cost;
   const total = state.totalCost || 0;
-  el.textContent = `$${(ev.cost || 0).toFixed(4)} · $${total.toFixed(2)} total`;
-  el.title = `Session cost — ${(ev.tokens_in || 0).toLocaleString()} in / ${(ev.tokens_out || 0).toLocaleString()} out · $${total.toFixed(4)} across all sessions${ev.priced ? "" : " (model unpriced, cost incomplete)"}`;
+  const codex = state.providerType === "codex";
+  if (codex) {
+    // ChatGPT subscription: turns are flat-rate, $0 marginal is CORRECT, not
+    // "unpriced/incomplete" (QA 2026-07-20). Show it as included.
+    el.textContent = `included · $${total.toFixed(2)} total`;
+    el.title = `This turn runs on your ChatGPT subscription (no per-token charge). ${(ev.tokens_in || 0).toLocaleString()} in / ${(ev.tokens_out || 0).toLocaleString()} out · $${total.toFixed(4)} billed across metered (API-key) sessions`;
+  } else {
+    el.textContent = `$${(ev.cost || 0).toFixed(4)} · $${total.toFixed(2)} total`;
+    el.title = `Session cost — ${(ev.tokens_in || 0).toLocaleString()} in / ${(ev.tokens_out || 0).toLocaleString()} out · $${total.toFixed(4)} across all sessions${ev.priced ? "" : " (model unpriced, cost incomplete)"}`;
+  }
   el.classList.toggle("unpriced", !ev.priced);
 }
 
@@ -1060,7 +1083,18 @@ function collectFallbacks() {
   })).filter((f) => f.base_url && f.model);
 }
 
+function renderModeWarning() {
+  const warn = $("mode-rule-warn");
+  if (!warn) return;
+  const n = (state.rules || []).length;
+  if (!n) { warn.hidden = true; return; }
+  const list = state.rules.map((r) => `${r.tool} ${r.pattern}`).join(", ");
+  warn.hidden = false;
+  warn.textContent = `Heads up: ${n} standing always-allow rule${n > 1 ? "s" : ""} auto-approve regardless of this setting (${list}). Manage them under Always-allow rules below.`;
+}
+
 function fillEngine() {
+  renderModeWarning();
   $("eng-compact").value = state.engine.compact_tokens;
   $("eng-keep").value = state.engine.keep_recent;
   $("eng-iter").value = state.engine.max_iterations;
@@ -1097,6 +1131,7 @@ function fillIntegrations(s) {
 function fillRules() {
   const box = $("rules-list");
   box.innerHTML = state.rules.length ? "" : '<span class="muted">None yet — approve something with "Always allow".</span>';
+  renderModeWarning();
   state.rules.forEach((r, i) => {
     const row = document.createElement("div");
     row.className = "rule-row";
