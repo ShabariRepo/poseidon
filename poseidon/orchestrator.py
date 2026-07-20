@@ -174,6 +174,22 @@ async def _chat_completion_stream(provider, messages, tools, on_delta):
     return {"choices": [{"message": msg}], "usage": usage}
 
 
+def fallback_providers(cfg: dict) -> list:
+    """Configured fallback providers with api_keys filled from the per-provider
+    key vault (config.provider_keys). Entries without base_url+model are
+    skipped; an entry with its own api_key keeps it."""
+    vault = cfg.get("provider_keys") or {}
+    out = []
+    for p in cfg.get("provider_fallbacks") or []:
+        if not (p.get("base_url") and p.get("model")):
+            continue
+        q = dict(p)
+        if not q.get("api_key"):
+            q["api_key"] = vault.get(q["base_url"], "")
+        out.append(q)
+    return out
+
+
 def _estimate_tokens(messages) -> int:
     return sum(len(json.dumps(m)) for m in messages) // 4
 
@@ -362,8 +378,7 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
             await flush()
 
     # failover chain: primary + any configured fallbacks (the Bonito habit)
-    providers = [provider] + [p for p in (load_config().get("provider_fallbacks") or [])
-                              if p.get("base_url") and p.get("model")]
+    providers = [provider] + fallback_providers(load_config())
 
     async def complete():
         last = None
@@ -378,7 +393,8 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
                     d = await _chat_completion(prov, messages, schemas,
                                                retries=1 if i < len(providers) - 1 else 2)
                 if i:
-                    await ctx.emit({"type": "failover", "model": prov["model"]})
+                    await ctx.emit({"type": "failover", "model": prov["model"],
+                                    "base_url": prov.get("base_url", "")})
                 return d, prov
             except RuntimeError as e:
                 if any(m in str(e) for m in _MALFORMED_MARKERS):

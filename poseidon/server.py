@@ -91,6 +91,11 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
                           "context_window": provider.get("context_window"),
                           "has_key": bool(provider.get("api_key"))} if provider else None),
             "presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in PRESETS.items()},
+            "fallbacks": [
+                {"base_url": f.get("base_url", ""), "model": f.get("model", ""),
+                 "context_window": f.get("context_window"),
+                 "has_key": bool((cfg.get("provider_keys") or {}).get(f.get("base_url", "")))}
+                for f in (cfg.get("provider_fallbacks") or [])],
             "approval_rules": cfg.get("approvals", {}).get("rules", []),
             "approval_mode": cfg.get("approvals", {}).get("mode", "careful"),
             "account": {"linked": bool((cfg.get("account") or {}).get("key")),
@@ -139,6 +144,32 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
                 pass  # invalid → fall back to the 200k default downstream
         save_config(cfg)
         return {"ok": True}
+
+    @app.post("/api/config/fallbacks")
+    async def set_fallbacks(body: dict):
+        """Ordered failover chain (max 3). Keys go into the per-provider vault,
+        never inline into the chain — a blank key means 'use the vault'."""
+        cfg = load_config()
+        keys = cfg.setdefault("provider_keys", {})
+        chain = []
+        for f in (body.get("fallbacks") or [])[:3]:
+            bu = (f.get("base_url") or "").strip()
+            mo = (f.get("model") or "").strip()
+            if not bu or not mo:
+                continue
+            k = (f.get("api_key") or "").strip()
+            if k:
+                keys[bu] = k
+            entry = {"base_url": bu, "model": mo}
+            if f.get("context_window"):
+                try:
+                    entry["context_window"] = max(4000, min(2_000_000, int(f["context_window"])))
+                except (TypeError, ValueError):
+                    pass
+            chain.append(entry)
+        cfg["provider_fallbacks"] = chain
+        save_config(cfg)
+        return {"ok": True, "count": len(chain)}
 
     # ---------- Codex (ChatGPT-subscription) sign-in ----------
     @app.get("/api/codex/status")

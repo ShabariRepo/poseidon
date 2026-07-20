@@ -802,3 +802,9 @@ dialog a { color: var(--accent); }
   #scene *, #scene { animation: none !important; }
   * { transition-duration: .01ms !important; }
 }
+
+/* failover chain rows (settings) */
+.fallback-row{display:flex;gap:6px;align-items:center;margin:6px 0;}
+.fallback-row input{flex:1;min-width:0;}
+.fallback-row select{max-width:140px;}
+.fallback-row .fb-del{flex:none;}

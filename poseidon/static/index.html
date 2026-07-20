@@ -140,6 +140,11 @@
     <label>API key <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" /></label>
     <label>Model <input id="cfg-model" placeholder="gpt-4o-mini" /></label>
     <label>Context window (tokens) <input id="cfg-context-window" type="number" placeholder="200000" /></label>
+    <h3>Failover</h3>
+    <p class="muted">If the main provider errors (rate limit, outage, bad key), Poseidon retries down this list before giving up. A switch only happens between answers, never mid-answer. Keys are remembered per provider.</p>
+    <div id="fallback-list"></div>
+    <button class="ghost mini" id="fallback-add" type="button">+ Add fallback</button>
+    <p class="muted">Want smart routing instead of a chain — cost-aware, one key for every provider? That&rsquo;s the <b>Bonito Gateway</b> preset above.</p>
     <h3>Engine</h3>
     <div class="settings-grid">
       <label>Compact context above (tokens) <input id="eng-compact" type="number" min="4000" max="200000" step="1000" /></label>

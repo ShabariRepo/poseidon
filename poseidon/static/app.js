@@ -21,6 +21,7 @@ const esc = (s) => { const d = document.createElement("span"); d.textContent = s
 async function init() {
   const s = await fetch("/api/state").then((r) => r.json());
   state.totalCost = s.total_cost || 0;
+  state.rawFallbacks = s.fallbacks || [];
   Object.assign(state, { presets: s.presets, engine: s.engine, rules: s.approval_rules,
     projects: s.projects, members: s.members, approvalMode: s.approval_mode });
   $("workdir")?.remove();
@@ -223,6 +224,10 @@ function handleEvent(ev) {
     case "tasks_update": if (mine) renderTasks(ev.tasks); break;
     case "approval_required": if (mine) { setThinking(false); renderApproval(ev); } break;
     case "cost_update": if (mine) updateCost(ev); break;
+    case "failover":
+      if (mine) addChip(`⇄ provider errored — fell back to ${ev.model}`);
+      logActivity(`⇄ failover → ${ev.model}`, ev.base_url || "", "err");
+      break;
     case "context": if (mine) updateContext(ev); break;
     case "sandbox":
       if (mine && ev.state === "on") setSandboxUI(true);
@@ -1007,6 +1012,52 @@ function fillPresets(s) {
     sel.value = "ollama";
     sel.onchange();
   }
+  state.fallbacks = (state.rawFallbacks || []).map((f) => ({ ...f }));
+  renderFallbacks();
+}
+
+/* ---------- failover chain (settings) ---------- */
+function renderFallbacks() {
+  const box = $("fallback-list");
+  if (!box) return;
+  box.innerHTML = "";
+  (state.fallbacks || []).forEach((f, i) => {
+    const row = document.createElement("div");
+    row.className = "fallback-row";
+    const sel = document.createElement("select");
+    const o0 = document.createElement("option");
+    o0.value = ""; o0.textContent = `#${i + 1} preset…`; sel.appendChild(o0);
+    for (const [key, p] of Object.entries(state.presets || {})) {
+      if (!p.base_url) continue;
+      const o = document.createElement("option");
+      o.value = key; o.textContent = p.label; sel.appendChild(o);
+    }
+    const base = document.createElement("input");
+    base.className = "fb-base"; base.placeholder = "base URL"; base.value = f.base_url || "";
+    const model = document.createElement("input");
+    model.className = "fb-model"; model.placeholder = "model"; model.value = f.model || "";
+    const key = document.createElement("input");
+    key.className = "fb-key"; key.type = "password";
+    key.placeholder = f.has_key ? "key saved — blank keeps it" : "API key";
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "ghost mini fb-del"; del.textContent = "✕";
+    del.onclick = () => { state.fallbacks.splice(i, 1); renderFallbacks(); };
+    sel.onchange = () => {
+      const p = state.presets[sel.value];
+      if (!p) return;
+      base.value = p.base_url || ""; model.value = p.model || "";
+    };
+    row.append(sel, base, model, key, del);
+    box.appendChild(row);
+  });
+}
+
+function collectFallbacks() {
+  return [...document.querySelectorAll("#fallback-list .fallback-row")].map((r) => ({
+    base_url: r.querySelector(".fb-base").value.trim(),
+    model: r.querySelector(".fb-model").value.trim(),
+    api_key: r.querySelector(".fb-key").value,
+  })).filter((f) => f.base_url && f.model);
 }
 
 function fillEngine() {
@@ -1169,6 +1220,11 @@ $("codex-logout").onclick = async () => {
   refreshCodexStatus();
 };
 
+$("fallback-add").onclick = () => {
+  (state.fallbacks ||= []).push({ base_url: "", model: "" });
+  renderFallbacks();
+};
+
 function openSettings() { $("settings-modal").showModal(); refreshCodexStatus(); }
 $("settings-btn").onclick = openSettings;
 $("cfg-cancel").onclick = () => $("settings-modal").close();
@@ -1181,6 +1237,8 @@ $("cfg-save").onclick = async (e) => {
     await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ base_url, api_key: $("cfg-api-key").value, model, context_window }) });
   }
+  await fetch("/api/config/fallbacks", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fallbacks: collectFallbacks() }) });
   const r = await fetch("/api/settings/engine", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ compact_tokens: +$("eng-compact").value, keep_recent: +$("eng-keep").value,
       max_iterations: +$("eng-iter").value, auto_checkpoint: $("eng-ckpt").checked,
