@@ -20,6 +20,7 @@ const esc = (s) => { const d = document.createElement("span"); d.textContent = s
 /* ---------- boot ---------- */
 async function init() {
   const s = await fetch("/api/state").then((r) => r.json());
+  state.totalCost = s.total_cost || 0;
   Object.assign(state, { presets: s.presets, engine: s.engine, rules: s.approval_rules,
     projects: s.projects, members: s.members, approvalMode: s.approval_mode });
   $("workdir")?.remove();
@@ -822,8 +823,10 @@ function fmtSize(n) {
 /* ---------- cost ---------- */
 function updateCost(ev) {
   const el = $("cost");
-  el.textContent = `$${(ev.cost || 0).toFixed(4)}`;
-  el.title = `Session cost — ${(ev.tokens_in || 0).toLocaleString()} in / ${(ev.tokens_out || 0).toLocaleString()} out${ev.priced ? "" : " (model unpriced, cost incomplete)"}`;
+  if (typeof ev.total_cost === "number") state.totalCost = ev.total_cost;
+  const total = state.totalCost || 0;
+  el.textContent = `$${(ev.cost || 0).toFixed(4)} · $${total.toFixed(2)} total`;
+  el.title = `Session cost — ${(ev.tokens_in || 0).toLocaleString()} in / ${(ev.tokens_out || 0).toLocaleString()} out · $${total.toFixed(4)} across all sessions${ev.priced ? "" : " (model unpriced, cost incomplete)"}`;
   el.classList.toggle("unpriced", !ev.priced);
 }
 
@@ -991,6 +994,15 @@ function fillPresets(s) {
     $("cfg-base-url").value = s.provider.base_url;
     $("cfg-model").value = s.provider.model;
     $("cfg-context-window").value = s.provider.context_window || "";
+    // Select the preset that matches the CONFIGURED provider, not the first
+    // option — "says Ollama while talking to Groq" was a lie in the UI.
+    const match = Object.entries(s.presets).find(
+      ([, p]) => p.base_url && p.base_url === s.provider.base_url);
+    sel.value = match ? match[0] : "custom";
+    // A saved key stays saved on Save when this field is left blank.
+    $("cfg-api-key").placeholder = s.provider.has_key
+      ? "saved — leave blank to keep it"
+      : "sk-... (blank for local Ollama)";
   } else {
     sel.value = "ollama";
     sel.onchange();

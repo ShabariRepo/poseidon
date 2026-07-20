@@ -115,7 +115,15 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         if not base_url or not model:
             raise HTTPException(422, "base_url and model are required")
         cfg = load_config()
-        cfg["provider"] = {"base_url": base_url, "api_key": (body.get("api_key") or "").strip(), "model": model}
+        # A blank key field KEEPS the saved key (the UI clears the field on
+        # preset change and never refills it — before this, any innocent Save
+        # silently wiped the stored key and broke the provider with a 401).
+        new_key = (body.get("api_key") or "").strip()
+        if not new_key:
+            prev = cfg.get("provider") or {}
+            if prev.get("base_url") == base_url:
+                new_key = prev.get("api_key", "")
+        cfg["provider"] = {"base_url": base_url, "api_key": new_key, "model": model}
         if body.get("context_window") is not None:
             try:
                 cfg["provider"]["context_window"] = max(4000, min(2_000_000, int(body["context_window"])))

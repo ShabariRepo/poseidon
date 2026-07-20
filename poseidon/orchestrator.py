@@ -410,7 +410,8 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
         usd, priced = compute_cost(provider["model"], data.get("usage"))
         ctx.store.add_usage(ctx.session_id, usd, priced, data.get("usage"))
         ctx.store.add_run_cost(ctx.run_id, usd)
-        await ctx.emit({"type": "cost_update", **ctx.store.get_cost(ctx.session_id)})
+        await ctx.emit({"type": "cost_update", **ctx.store.get_cost(ctx.session_id),
+                        "total_cost": ctx.store.total_cost()})
 
         msg = data["choices"][0]["message"]
         messages.append(msg)
