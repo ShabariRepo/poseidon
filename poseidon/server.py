@@ -115,14 +115,22 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
         if not base_url or not model:
             raise HTTPException(422, "base_url and model are required")
         cfg = load_config()
-        # A blank key field KEEPS the saved key (the UI clears the field on
-        # preset change and never refills it — before this, any innocent Save
-        # silently wiped the stored key and broke the provider with a 401).
+        # Per-provider key vault: every non-blank key is remembered PER base_url,
+        # and a blank key field falls back to the vault. Two failure modes die
+        # here: (1) any innocent Save used to wipe the stored key (the UI clears
+        # the field on preset change and never refills it); (2) switching preset
+        # away and back lost the previous provider's key. Now each provider's
+        # key survives any amount of preset hopping.
+        keys = cfg.setdefault("provider_keys", {})
+        # migrate: remember the currently-configured provider's key
+        prev = cfg.get("provider") or {}
+        if prev.get("base_url") and prev.get("api_key"):
+            keys.setdefault(prev["base_url"], prev["api_key"])
         new_key = (body.get("api_key") or "").strip()
-        if not new_key:
-            prev = cfg.get("provider") or {}
-            if prev.get("base_url") == base_url:
-                new_key = prev.get("api_key", "")
+        if new_key:
+            keys[base_url] = new_key
+        else:
+            new_key = keys.get(base_url, "")
         cfg["provider"] = {"base_url": base_url, "api_key": new_key, "model": model}
         if body.get("context_window") is not None:
             try:
