@@ -78,6 +78,13 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    def _codex_linked():
+        try:
+            from . import codex
+            return codex.is_linked()
+        except Exception:
+            return False
+
     # ---------- state & settings ----------
     @app.get("/api/state")
     async def state():
@@ -113,6 +120,8 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             "members": store.list_members(),
             "total_cost": store.total_cost(),
             "total_saved": store.total_saved(),
+            "keyed_urls": [u for u, k in (cfg.get("provider_keys") or {}).items() if k],
+            "codex_linked": _codex_linked(),
         }
 
     @app.post("/api/config")

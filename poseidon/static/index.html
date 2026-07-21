@@ -124,57 +124,100 @@
   <dialog id="settings-modal">
     <h2>Settings</h2>
     <div class="dialog-body">
-    <h3>Provider</h3>
-    <p class="muted">Any OpenAI-compatible endpoint works. Keys never leave this machine.</p>
-    <div id="codex-box" class="codex-box">
-      <div class="codex-head">🔑 Use your ChatGPT subscription <span class="muted">(no API key)</span>
-        <span id="codex-status" class="badge">not linked</span></div>
-      <div class="codex-actions">
-        <button class="ghost mini" id="codex-signin" type="button">Sign in with ChatGPT</button>
-        <button class="ghost mini" id="codex-import" type="button" title="Reuse an existing `codex login`">Import Codex CLI</button>
-        <button class="ghost mini" id="codex-logout" type="button" hidden>Sign out</button>
-      </div>
-      <div id="codex-flow" class="codex-flow" hidden></div>
+
+    <!-- what you're connected to, in plain words -->
+    <div id="active-conn" class="active-conn"><span class="ac-dot"></span><span id="ac-text">Checking…</span></div>
+
+    <!-- the one real choice: how Poseidon connects -->
+    <div class="conn-cards">
+      <button class="conn-card" data-conn="chatgpt" type="button">
+        <div class="cc-top"><span class="cc-title">ChatGPT subscription</span><span class="cc-badge" id="cc-badge-chatgpt"></span></div>
+        <div class="cc-sub">Use your ChatGPT Plus or Pro login. No API key.</div>
+      </button>
+      <button class="conn-card" data-conn="bonito" type="button">
+        <div class="cc-top"><span class="cc-title">Bonito Gateway</span><span class="cc-badge" id="cc-badge-bonito"></span></div>
+        <div class="cc-sub">One key, every provider, automatic failover.</div>
+      </button>
+      <button class="conn-card" data-conn="openai" type="button">
+        <div class="cc-top"><span class="cc-title">OpenAI</span><span class="cc-badge" id="cc-badge-openai"></span></div>
+        <div class="cc-sub">Your own OpenAI API key.</div>
+      </button>
+      <button class="conn-card" data-conn="groq" type="button">
+        <div class="cc-top"><span class="cc-title">Groq</span><span class="cc-badge" id="cc-badge-groq"></span></div>
+        <div class="cc-sub">Fast and cheap. Your own Groq key.</div>
+      </button>
+      <button class="conn-card" data-conn="ollama" type="button">
+        <div class="cc-top"><span class="cc-title">Local (Ollama)</span><span class="cc-badge" id="cc-badge-ollama"></span></div>
+        <div class="cc-sub">Free. Runs on your machine, nothing leaves it.</div>
+      </button>
     </div>
-    <label>Preset <select id="preset-select"></select></label>
-    <label>Base URL <input id="cfg-base-url" placeholder="https://api.openai.com/v1" /></label>
-    <label>API key <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" /></label>
-    <label>Model <input id="cfg-model" placeholder="gpt-4o-mini" /></label>
-    <label>Context window (tokens) <input id="cfg-context-window" type="number" placeholder="200000" /></label>
-    <h3>Failover</h3>
-    <p class="muted">If the main provider errors (rate limit, outage, bad key), Poseidon retries down this list before giving up. A switch only happens between answers, never mid-answer. Keys are remembered per provider.</p>
-    <div id="fallback-list"></div>
-    <button class="ghost mini" id="fallback-add" type="button">+ Add fallback</button>
-    <p class="muted">Want smart routing instead of a chain — cost-aware, one key for every provider? That&rsquo;s the <b>Bonito Gateway</b> preset above.</p>
-    <h3>Engine</h3>
-    <div class="settings-grid">
-      <label>Compact context above (tokens) <input id="eng-compact" type="number" min="4000" max="200000" step="1000" /></label>
-      <label>Keep recent messages <input id="eng-keep" type="number" min="2" max="40" /></label>
-      <label>Max steps per turn <input id="eng-iter" type="number" min="5" max="60" /></label>
-      <label class="check"><input id="eng-ckpt" type="checkbox" /> Auto-checkpoint after real work</label>
-      <label>Autonomy
-        <select id="eng-mode">
-          <option value="careful">Careful — ask before every change</option>
-          <option value="balanced">Balanced — file edits just happen (versioned), commands ask</option>
-          <option value="autonomous">Autonomous — only emails/messages ask</option>
-        </select>
-      </label>
+
+    <!-- inline key entry, only appears when a chosen provider needs a key -->
+    <div id="key-entry" class="key-entry" hidden>
+      <div id="key-label" class="key-label"></div>
+      <div class="key-row"><input id="key-input" type="password" placeholder="Paste your key" /><button id="key-connect" type="button">Connect</button></div>
+      <div id="key-hint" class="muted"></div>
     </div>
+
+    <!-- ChatGPT sign-in flow (device/browser) appears here -->
+    <div class="codex-actions" id="codex-actions" hidden>
+      <button class="ghost mini" id="codex-signin" type="button">Sign in with ChatGPT</button>
+      <button class="ghost mini" id="codex-import" type="button" title="Reuse an existing codex login">Import Codex CLI</button>
+      <button class="ghost mini" id="codex-logout" type="button" hidden>Sign out</button>
+      <span id="codex-status" class="badge" hidden></span>
+    </div>
+    <div id="codex-flow" class="codex-flow" hidden></div>
+
+    <!-- how careful Poseidon is: the other thing a normal person cares about -->
+    <label class="simple-field">How much can Poseidon do on its own?
+      <select id="eng-mode">
+        <option value="careful">Careful — ask before every change</option>
+        <option value="balanced">Balanced — file edits just happen (saved), commands ask</option>
+        <option value="autonomous">Autonomous — only emails and messages ask</option>
+      </select>
+    </label>
     <p id="mode-rule-warn" class="mode-warn" hidden></p>
-    <h3>Bonito account</h3>
-    <p class="muted" id="acct-status">Not linked — get your free key at getbonito.com → Poseidon.</p>
-    <label>Poseidon key <input id="acct-key" type="password" placeholder="pk-…" /></label>
-    <button class="ghost mini" id="acct-link" type="button">Link account</button>
-    <h3>Integrations</h3>
-    <div class="settings-grid">
-      <label>Gmail address <input id="int-gmail-email" placeholder="you@gmail.com" /></label>
-      <label>Gmail app password <input id="int-gmail-pass" type="password" placeholder="16-char app password" /></label>
-      <label>Slack bot token <input id="int-slack-token" type="password" placeholder="xoxb-…" /></label>
-      <label>Slack default channel <input id="int-slack-channel" placeholder="#general" /></label>
-    </div>
-    <p class="muted" id="int-status"></p>
-    <h3>Always-allow rules</h3>
-    <div id="rules-list" class="rules-list"><span class="muted">None yet — approve something with "Always allow".</span></div>
+
+    <!-- everything technical, hidden by default -->
+    <details class="adv">
+      <summary>Advanced</summary>
+      <p class="muted">Point at any OpenAI-compatible endpoint, tune the engine, add integrations. Keys never leave this machine.</p>
+      <label>Preset <select id="preset-select"></select></label>
+      <label>Base URL <input id="cfg-base-url" placeholder="https://api.openai.com/v1" /></label>
+      <label>API key <input id="cfg-api-key" type="password" placeholder="sk-… (blank for local Ollama)" /></label>
+      <label>Model <input id="cfg-model" placeholder="gpt-4o-mini" /></label>
+      <label>Context window (tokens) <input id="cfg-context-window" type="number" placeholder="200000" /></label>
+
+      <h3>Failover</h3>
+      <p class="muted">If the main provider errors, Poseidon retries down this list before giving up. Switches only happen between answers, never mid-answer. Keys are remembered per provider.</p>
+      <div id="fallback-list"></div>
+      <button class="ghost mini" id="fallback-add" type="button">+ Add fallback</button>
+
+      <h3>Engine</h3>
+      <div class="settings-grid">
+        <label>Compact context above (tokens) <input id="eng-compact" type="number" min="4000" max="200000" step="1000" /></label>
+        <label>Keep recent messages <input id="eng-keep" type="number" min="2" max="40" /></label>
+        <label>Max steps per turn <input id="eng-iter" type="number" min="5" max="60" /></label>
+        <label class="check"><input id="eng-ckpt" type="checkbox" /> Auto-checkpoint after real work</label>
+      </div>
+
+      <h3>Bonito account</h3>
+      <p class="muted" id="acct-status">Not linked — get your free key at getbonito.com → Poseidon.</p>
+      <label>Poseidon key <input id="acct-key" type="password" placeholder="pk-…" /></label>
+      <button class="ghost mini" id="acct-link" type="button">Link account</button>
+
+      <h3>Integrations</h3>
+      <div class="settings-grid">
+        <label>Gmail address <input id="int-gmail-email" placeholder="you@gmail.com" /></label>
+        <label>Gmail app password <input id="int-gmail-pass" type="password" placeholder="16-char app password" /></label>
+        <label>Slack bot token <input id="int-slack-token" type="password" placeholder="xoxb-…" /></label>
+        <label>Slack default channel <input id="int-slack-channel" placeholder="#general" /></label>
+      </div>
+      <p class="muted" id="int-status"></p>
+
+      <h3>Always-allow rules</h3>
+      <div id="rules-list" class="rules-list"><span class="muted">None yet — approve something with "Always allow".</span></div>
+    </details>
     </div>
     <div class="modal-actions">
       <button id="cfg-save">Save</button>

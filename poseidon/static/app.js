@@ -1271,7 +1271,101 @@ $("fallback-add").onclick = () => {
   renderFallbacks();
 };
 
-function openSettings() { $("settings-modal").showModal(); refreshCodexStatus(); }
+// ── simplified connection UI (cards) ───────────────────────────────
+const CONN_LABEL = { chatgpt: "your ChatGPT subscription", bonito: "Bonito Gateway",
+  openai: "OpenAI", groq: "Groq", ollama: "local Ollama", custom: "a custom endpoint" };
+
+function _presetFor(conn) {
+  // map a card to its preset (base_url/model). chatgpt has no base_url.
+  const map = { bonito: "bonito", openai: "openai", groq: "groq", ollama: "ollama" };
+  return state.presets?.[map[conn]] || null;
+}
+
+function _activeConn(s) {
+  const p = s.provider;
+  if (!p) return "none";
+  if (p.type === "codex") return "chatgpt";
+  const byUrl = { };
+  for (const [k, v] of Object.entries(s.presets || {})) if (v.base_url) byUrl[v.base_url] = k;
+  const key = byUrl[p.base_url];
+  return key && ["bonito","openai","groq","ollama"].includes(key) ? key : (p.base_url ? "custom" : "none");
+}
+
+async function refreshConnUI() {
+  const s = await fetch("/api/state").then(r => r.json());
+  state.providerType = (s.provider && s.provider.type) || "";
+  state.keyedUrls = s.keyed_urls || [];
+  state.codexLinked = !!s.codex_linked;
+  const active = _activeConn(s);
+  // keep Advanced fields consistent with the live provider (codex has no base_url,
+  // so Save's `if (base_url && model)` guard correctly skips re-setting it).
+  if ($("cfg-base-url")) { $("cfg-base-url").value = s.provider?.base_url || ""; }
+  if ($("cfg-model")) { $("cfg-model").value = s.provider?.model || ""; }
+  if ($("cfg-context-window")) { $("cfg-context-window").value = s.provider?.context_window || ""; }
+  // status line
+  const txt = active === "none" ? "Not connected yet — pick one below."
+    : `Connected — using ${CONN_LABEL[active]}.`;
+  const ac = document.getElementById("ac-text"); if (ac) ac.textContent = txt;
+  const dot = document.querySelector(".ac-dot"); if (dot) dot.style.background = active === "none" ? "#c33" : "#16a34a";
+  // cards: active highlight + badges
+  document.querySelectorAll(".conn-card").forEach(card => {
+    const conn = card.dataset.conn;
+    card.classList.toggle("active", conn === active);
+    const badge = document.getElementById("cc-badge-" + conn);
+    if (!badge) return;
+    badge.className = "cc-badge";
+    if (conn === active) { badge.classList.add("on"); badge.textContent = "In use"; }
+    else if (conn === "chatgpt") { if (state.codexLinked) { badge.classList.add("ready"); badge.textContent = "Signed in"; } else { badge.classList.add("need"); badge.textContent = "Sign in"; } }
+    else if (conn === "ollama") { badge.textContent = ""; }
+    else { const pr = _presetFor(conn); const keyed = pr && state.keyedUrls.includes(pr.base_url);
+           if (keyed) { badge.classList.add("ready"); badge.textContent = "Key saved"; } else { badge.classList.add("need"); badge.textContent = "Needs key"; } }
+  });
+  // hide sign-in buttons unless the chatgpt card needs them
+  const ca = document.getElementById("codex-actions");
+  if (ca && active !== "chatgpt" && !state.codexLinked) { /* keep hidden until chosen */ }
+}
+
+let _pendingKeyConn = null;
+async function chooseConn(conn) {
+  document.getElementById("key-entry").hidden = true;
+  document.getElementById("codex-actions").hidden = true;
+  if (conn === "chatgpt") {
+    if (state.codexLinked) { await fetch("/api/codex/use", {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); await refreshConnUI(); refreshCodexStatus(); }
+    else { const ca = document.getElementById("codex-actions"); ca.hidden = false; document.getElementById("codex-logout").hidden = true; ca.scrollIntoView({block:"center"}); }
+    return;
+  }
+  if (conn === "ollama") {
+    const pr = _presetFor("ollama");
+    await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_url:pr.base_url,model:pr.model,api_key:"ollama",context_window:pr.context_window})});
+    await refreshConnUI(); return;
+  }
+  // openai / groq / bonito
+  const pr = _presetFor(conn);
+  if (pr && state.keyedUrls.includes(pr.base_url)) {
+    // key already saved -> switch instantly (blank key falls back to the vault)
+    await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_url:pr.base_url,model:pr.model,api_key:"",context_window:pr.context_window})});
+    await refreshConnUI(); return;
+  }
+  // need a key -> show inline entry
+  _pendingKeyConn = conn;
+  const ke = document.getElementById("key-entry"); ke.hidden = false;
+  document.getElementById("key-label").textContent = `Paste your ${CONN_LABEL[conn]} key`;
+  document.getElementById("key-hint").textContent = conn === "bonito" ? "Starts with bn- — get it at getbonito.com" : (conn === "groq" ? "Starts with gsk- — from console.groq.com" : "Starts with sk- — from platform.openai.com");
+  document.getElementById("key-input").value = "";
+  ke.scrollIntoView({block:"center"}); document.getElementById("key-input").focus();
+}
+
+document.querySelectorAll(".conn-card").forEach(c => c.onclick = () => chooseConn(c.dataset.conn));
+document.getElementById("key-connect").onclick = async () => {
+  const conn = _pendingKeyConn; if (!conn) return;
+  const pr = _presetFor(conn); const key = document.getElementById("key-input").value.trim();
+  if (!key) return;
+  await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_url:pr.base_url,model:pr.model,api_key:key,context_window:pr.context_window})});
+  document.getElementById("key-entry").hidden = true; _pendingKeyConn = null;
+  await refreshConnUI();
+};
+
+function openSettings() { $("settings-modal").showModal(); refreshCodexStatus(); refreshConnUI(); }
 $("settings-btn").onclick = openSettings;
 $("cfg-cancel").onclick = () => $("settings-modal").close();
 $("cfg-save").onclick = async (e) => {

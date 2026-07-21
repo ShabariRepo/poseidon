@@ -32,3 +32,34 @@ All team/approval/sandbox/checkpoint/schedule/subagent/failover features verifie
 - Model residuals only: llama-3.3 answer variance, codex sometimes uses
   run_command over edit_file. Not harness bugs.
 - Version dockerization NOT done (no Dockerfile; wheel + PyInstaller only).
+
+## v0.12.0 (2026-07-21) — the token-cost edge
+- retrieval.py: local BM25 (bag-of-words) + Jaccard, zero deps, nothing leaves the machine.
+- search_memory tool: keyword-rank memories vs dumping the whole index; scales memory.
+- compress.py: on-device context compression — dedupe re-sent blocks (file re-reads etc.),
+  keep latest copy, stub earlier identical ones. Deterministic, no answer change.
+- MEASURED: 35.7% input tokens saved on a session re-reading a 40KB source file x4.
+  Workload-dependent (re-read frequency x content size). Visible green "saved N tok (X%)"
+  chip next to the cost meter — provable in-product, not a marketing claim.
+- Positioning: "Use Poseidon for work, save on token costs free out of the box" — grounded
+  in the D71/Azzy cost study, now shipped + measured.
+- NOTE: BoW was NOT previously in Poseidon (recall was index-injection + wikilink graph);
+  it is now. Next levers if wanted: framing compression (D71 ~12%) + complexity-aware
+  routing (composes with the failover chain) for a bigger, more consistent %.
+
+## Roadmap / shelved (token savings)
+- SHIPPED (v0.12.0): dedup compression — drops re-sent identical content (file re-reads,
+  repeated tool output). Measured 34% on re-read-heavy coding, ~0% on chat/read-once.
+  This is MY method, not the study's. Visible "saved X%" chip.
+- SHELVED — port the D71/Azzy study's actual compress() (~/Desktop/code/ledger-recon/
+  optimization/run_opt.py). It is RULE-BASED REGEX (drop filler phrases like "please always
+  remember that", phrase swaps "in order to"->"to", collapse list redundancy), NOT BoW.
+  Measured 12% avg / 20% on bloated enterprise prompts, 6/6 quality-validated. Caveat:
+  targets verbose corporate prompts; Poseidon's lean prompt would save less. Stack it with
+  the dedup when picked up.
+- SHELVED — dynamic model routing (study's 67% lever, keyword+token-count). Biggest saving
+  but task complexity isn't reliably inferable from a short prompt -> mis-route risk. Ship
+  only as transparent + conservative + opt-in.
+- NOTE (correction): BoW was NEVER in the ledger-recon study (grepped: no bag-of-words/
+  TF-IDF/BM25/Jaccard anywhere). The study = rule-based compression + keyword routing +
+  (unbuilt) embedding cache. The BM25 in Poseidon is for memory SEARCH, unrelated to savings.
