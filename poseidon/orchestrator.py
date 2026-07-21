@@ -195,9 +195,17 @@ def _estimate_tokens(messages) -> int:
     return sum(len(json.dumps(m)) for m in messages) // 4
 
 
-def _build_system_prompt(project, store) -> str:
+def _build_system_prompt(project, store, provider=None) -> str:
     workdir = Path(project["workdir"])
     prompt = SYSTEM_PROMPT.format(project_name=project["name"], workdir=workdir)
+    if provider:
+        model = provider.get("model") or "unknown"
+        how = "your ChatGPT subscription (OpenAI)" if provider.get("type") == "codex" else f"the endpoint {provider.get('base_url','')}"
+        prompt += (f"\n\nYOUR MODEL: you are running on `{model}` via {how}. "
+                   "If asked which model or LLM you are, answer with exactly this. "
+                   "Do NOT infer or guess a model name from memory, saved notes, the project "
+                   "pulse, or prior sessions — those may reference a different model that was "
+                   "used before. The line above is the only source of truth for your model.")
     agents_md = workdir / "AGENTS.md"
     if agents_md.is_file():
         prompt += "\n\nProject instructions (AGENTS.md):\n" + agents_md.read_text(errors="replace")[:6000]
@@ -278,7 +286,7 @@ async def run_turn(project, store, runmgr, broker, scheduler, session_id, member
     ctx.label = label
     messages = store.get_messages(session_id)
     if not messages:
-        messages.append({"role": "system", "content": _build_system_prompt(project, store)})
+        messages.append({"role": "system", "content": _build_system_prompt(project, store, provider)})
         store.set_title(session_id, user_message[:80])
     if ctx.sandbox:
         note = ("[sandbox mode is ON: file changes go to an isolated copy of the "
