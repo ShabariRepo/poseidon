@@ -18,6 +18,7 @@ import httpx
 from . import memory as memory_store
 from .config import load_config
 from .costs import compute_cost
+from . import compress as _compress
 from .tools import TOOLS, tool_schemas
 from .versions import VersionStore
 
@@ -394,13 +395,18 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
         for i in range(active, len(providers)):
             prov = providers[i]
             try:
+                # Context compression (free token saving): send a squeezed COPY,
+                # never mutate the stored history. Measured + surfaced in the UI.
+                send_msgs, saved = _compress.compress(messages, _estimate_tokens)
+                if saved > 0:
+                    ctx.store.add_saved(ctx.session_id, saved)
                 try:
-                    d = await _chat_completion_stream(prov, messages, schemas, on_delta)
+                    d = await _chat_completion_stream(prov, send_msgs, schemas, on_delta)
                     await flush()
                 except RuntimeError as se:
                     if any(m in str(se) for m in _MALFORMED_MARKERS):
                         raise
-                    d = await _chat_completion(prov, messages, schemas,
+                    d = await _chat_completion(prov, send_msgs, schemas,
                                                retries=1 if i < len(providers) - 1 else 2)
                 if i != active:
                     await ctx.emit({"type": "failover", "model": prov["model"],
@@ -441,7 +447,8 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
         ctx.store.add_usage(ctx.session_id, usd, priced, data.get("usage"))
         ctx.store.add_run_cost(ctx.run_id, usd)
         await ctx.emit({"type": "cost_update", **ctx.store.get_cost(ctx.session_id),
-                        "total_cost": ctx.store.total_cost()})
+                        "total_cost": ctx.store.total_cost(),
+                        "total_saved": ctx.store.total_saved()})
 
         msg = data["choices"][0]["message"]
         messages.append(msg)

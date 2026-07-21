@@ -112,6 +112,7 @@ def create_app(workdir: Path, allow_remote: bool = False) -> FastAPI:
             "projects": store.list_projects(),
             "members": store.list_members(),
             "total_cost": store.total_cost(),
+            "total_saved": store.total_saved(),
         }
 
     @app.post("/api/config")

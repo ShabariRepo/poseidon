@@ -117,6 +117,20 @@ async def _forget_memory(args, ctx):
     return memory_store.forget(ctx.get("project_id", "default"), args["name"])
 
 
+async def _search_memory(args, ctx):
+    from ..retrieval import BM25
+    entries = memory_store.list_entries(ctx.get("project_id", "default"))
+    if not entries:
+        return {"results": [], "note": "no memories yet"}
+    docs = [(e["name"], f"{e['title']} {e['preview']}") for e in entries]
+    hits = BM25(docs).search(args["query"], top_k=int(args.get("top_k", 5)), min_score=0.01)
+    by_name = {e["name"]: e for e in entries}
+    return {"results": [
+        {"name": n, "title": by_name[n]["title"], "preview": by_name[n]["preview"][:300],
+         "links": by_name[n]["links"], "score": round(sc, 3)}
+        for n, sc in hits]}
+
+
 _register(
     "save_memory",
     "Save a durable fact to persistent memory (survives across sessions, shared with the team). Connect related memories with [[Other Memory Title]] wikilinks inside the content — memory is a graph and linked facts are recalled together. Overwrites if the title already exists.",
@@ -151,6 +165,20 @@ _register(
         "required": ["name"],
     },
     _forget_memory,
+)
+
+_register(
+    "search_memory",
+    "Search persistent memory by keyword and get the best-matching memories back (ranked). Use when your memory index is large or you need a fact that may not be in the always-loaded index. Local keyword search, instant, no cost.",
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "what you're trying to recall"},
+            "top_k": {"type": "integer", "description": "max results (default 5)"},
+        },
+        "required": ["query"],
+    },
+    _search_memory,
 )
 
 

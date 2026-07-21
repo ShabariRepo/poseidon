@@ -812,3 +812,6 @@ dialog a { color: var(--accent); }
 /* standing-rule override warning under the autonomy dial */
 .mode-warn{margin:6px 0 0;padding:8px 12px;font-size:12.5px;border-radius:8px;
   background:#fff6e6;border:1px solid #e7cf9a;color:#7a5b12;}
+
+/* free-token-savings chip (context compression) */
+.saved-chip{font-size:11px;color:#2e7d5b;background:#e6f5ed;border:1px solid #b8e0cb;border-radius:20px;padding:1px 8px;margin-left:2px;white-space:nowrap;}

@@ -47,7 +47,8 @@ class Store:
                 id TEXT PRIMARY KEY, created REAL, title TEXT DEFAULT '',
                 messages TEXT DEFAULT '[]',
                 tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0,
-                cost REAL DEFAULT 0, priced INTEGER DEFAULT 1
+                cost REAL DEFAULT 0, priced INTEGER DEFAULT 1,
+                tokens_saved INTEGER DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS runs (
                 id TEXT PRIMARY KEY, project_id TEXT, session_id TEXT,
@@ -246,6 +247,14 @@ class Store:
             (progress[:600], _now(), sid),
         )
 
+    def add_saved(self, sid: str, tokens: int):
+        if tokens > 0:
+            self._exec("UPDATE sessions SET tokens_saved=tokens_saved+? WHERE id=?", (int(tokens), sid))
+
+    def total_saved(self) -> int:
+        r = self._db.execute("SELECT COALESCE(SUM(tokens_saved),0) FROM sessions").fetchone()
+        return int(r[0] or 0)
+
     def add_usage(self, sid: str, usd: float, priced: bool, usage: dict):
         self._exec(
             """UPDATE sessions SET cost=cost+?, tokens_in=tokens_in+?,
@@ -262,12 +271,13 @@ class Store:
 
     def get_cost(self, sid: str) -> dict:
         r = self._db.execute(
-            "SELECT cost, tokens_in, tokens_out, priced FROM sessions WHERE id=?", (sid,)
+            "SELECT cost, tokens_in, tokens_out, priced, tokens_saved FROM sessions WHERE id=?", (sid,)
         ).fetchone()
         if not r:
-            return {"cost": 0.0, "tokens_in": 0, "tokens_out": 0, "priced": True}
+            return {"cost": 0.0, "tokens_in": 0, "tokens_out": 0, "priced": True, "tokens_saved": 0}
         return {
             "cost": r[0], "tokens_in": r[1], "tokens_out": r[2], "priced": bool(r[3]),
+            "tokens_saved": r[4] or 0,
         }
 
     # ---------- runs ----------

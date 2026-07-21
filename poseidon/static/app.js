@@ -34,6 +34,7 @@ function renderMd(text) {
 async function init() {
   const s = await fetch("/api/state").then((r) => r.json());
   state.totalCost = s.total_cost || 0;
+  state.totalSaved = s.total_saved || 0;
   state.rawFallbacks = s.fallbacks || [];
   state.providerType = (s.provider && s.provider.type) || "";
   Object.assign(state, { presets: s.presets, engine: s.engine, rules: s.approval_rules,
@@ -844,7 +845,17 @@ function fmtSize(n) {
 function updateCost(ev) {
   const el = $("cost");
   if (typeof ev.total_cost === "number") state.totalCost = ev.total_cost;
+  if (typeof ev.total_saved === "number") state.totalSaved = ev.total_saved;
   const total = state.totalCost || 0;
+  const savedEl = document.getElementById("saved");
+  if (savedEl) {
+    const saved = state.totalSaved || 0;
+    const inTok = (ev.tokens_in || 0) + saved;
+    const pct = inTok > 0 ? Math.round((saved / inTok) * 100) : 0;
+    if (saved > 0) { savedEl.hidden = false; savedEl.textContent = `saved ${saved.toLocaleString()} tok (${pct}%)`;
+      savedEl.title = `Context compression has cut ${saved.toLocaleString()} input tokens (~${pct}% of what would have been sent) this install — free, on-device, no answer change.`; }
+    else savedEl.hidden = true;
+  }
   const codex = state.providerType === "codex";
   if (codex) {
     // ChatGPT subscription: turns are flat-rate, $0 marginal is CORRECT, not
