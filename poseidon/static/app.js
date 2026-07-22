@@ -100,7 +100,7 @@ function fillProjectSelect() {
     o.textContent = p.name;
     sel.appendChild(o);
   }
-  const saved = localStorage.getItem("poseidon-project");
+  const saved = new URLSearchParams(location.search).get("project") || localStorage.getItem("poseidon-project");
   state.projectId = state.projects.find((p) => p.id === saved) ? saved : state.projects[0]?.id;
   sel.value = state.projectId;
   sel.onchange = async () => {
@@ -418,57 +418,128 @@ function schedulePipeline() {
 
 const KIND_ICON = { chat: "💬", background: "🌀", scheduled: "⏰", subagent: "⑂" };
 
+/* Theme-aware colors for the vis-network diagrams (follow the active skin). */
+function themeColors() {
+  const v = (n, fb) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb;
+  return {
+    bg: v("--bg-solid", "#fff"), raised: v("--bg-raised", "#fff"), border: v("--border", "#d8e4ee"),
+    text: v("--text", "#21384d"), muted: v("--muted", "#64798e"), accent: v("--accent", "#0f7fa8"),
+    accentSoft: v("--accent-soft", "#e0f1f8"), done: v("--done", "#3f9c6b"),
+    danger: v("--danger", "#c2493d"), warn: v("--warn", "#b07818"),
+  };
+}
+
+function runTooltip(run, dur) {
+  const el = document.createElement("div");
+  const rows = [
+    [run.label || run.kind, ""],
+    ["kind", run.kind], ["status", run.status], ["duration", dur],
+    run.cost ? ["cost", `$${run.cost.toFixed(4)}`] : null,
+  ].filter(Boolean);
+  el.append(...rows.map(([k, val], i) => {
+    const d = document.createElement("div");
+    if (i === 0) { d.style.fontWeight = "700"; d.style.marginBottom = "4px"; d.textContent = k; }
+    else { d.textContent = `${k}: ${val}`; }
+    return d;
+  }));
+  return el;
+}
+
+let pipeNet = null, pipeSig = "", pipeCount = 0;
+
 async function refreshPipeline() {
   const [runsR, schedR] = await Promise.all([
     fetch(`/api/runs?project_id=${state.projectId}`).then((r) => r.json()),
     fetch(`/api/schedules?project_id=${state.projectId}`).then((r) => r.json()),
   ]);
   const runs = runsR.runs || [];
+  const schedules = schedR.schedules || [];
   const canvas = $("pipeline-canvas");
-  canvas.innerHTML = "";
-  if (schedR.schedules?.length) {
-    const src = document.createElement("div");
-    src.className = "pipe-sources";
-    for (const s of schedR.schedules) {
-      const n = document.createElement("div");
-      n.className = "pnode source";
-      n.innerHTML = `<span class="ico">⏰</span><div class="lbl">${esc(s.prompt.slice(0, 60))}</div>
-        <div class="sub">next ${esc(s.next_run || "—")}</div>`;
-      src.appendChild(n);
-    }
-    canvas.appendChild(src);
-  }
-  const tops = runs.filter((r) => !r.parent_run_id).slice(0, 10);
-  const children = (id) => runs.filter((r) => r.parent_run_id === id);
-  if (!tops.length && !schedR.schedules?.length) {
+  const tops = runs.filter((r) => !r.parent_run_id).slice(0, 14);
+  if (!tops.length && !schedules.length) {
+    if (pipeNet) { pipeNet.destroy(); pipeNet = null; pipeSig = ""; }
     canvas.innerHTML = '<div class="feed-empty">Runs will appear here as a live diagram — chat turns, background tasks, schedules, and their subagents. Click a node to drill in.</div>';
     return;
   }
-  for (const run of tops) {
-    canvas.appendChild(runNode(run, children));
-  }
-}
+  const sig = JSON.stringify([runs.map((r) => [r.id, r.status, r.parent_run_id, r.cost, r.finished]),
+    schedules.map((s) => [s.id, s.next_run])]);
+  if (sig === pipeSig && pipeNet) return;
+  pipeSig = sig;
 
-function runNode(run, children) {
-  const wrap = document.createElement("div");
-  wrap.className = "pipe-branch";
-  const n = document.createElement("div");
-  n.className = `pnode ${run.status}`;
-  const dur = run.finished ? `${Math.max(1, Math.round(run.finished - run.started))}s` : "running…";
-  n.innerHTML = `<span class="ico">${KIND_ICON[run.kind] || "•"}</span>
-    <div class="lbl">${esc(run.label || run.kind)}</div>
-    <div class="sub">${esc(run.kind)} · ${dur}${run.cost ? ` · $${run.cost.toFixed(4)}` : ""}</div>
-    <span class="status-dot"></span>`;
-  n.onclick = () => drillRun(run.id);
-  wrap.appendChild(n);
-  const kids = children(run.id);
-  if (kids.length) {
-    const box = document.createElement("div");
-    box.className = "pipe-children";
-    for (const k of kids) box.appendChild(runNode(k, children));
-    wrap.appendChild(box);
+  const C = themeColors();
+  const box = (over) => Object.assign({
+    shape: "box", shapeProperties: { borderRadius: 10 }, margin: { top: 10, right: 14, bottom: 10, left: 14 },
+    color: { background: C.bg, border: C.border, highlight: { background: C.accentSoft, border: C.accent }, hover: { background: C.bg, border: C.accent } },
+    font: { multi: "html", color: C.text, size: 13, face: "-apple-system, 'Segoe UI', sans-serif", bold: { size: 13, color: C.text }, ital: { size: 11, color: C.muted } },
+    borderWidth: 1.5, widthConstraint: { maximum: 240 },
+  }, over);
+  const trim = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+  const nodes = [], edges = [];
+  for (const s of schedules) {
+    nodes.push(box({
+      id: `sched:${s.id}`, level: 0,
+      label: `⏰ <b>${trim(s.prompt, 46)}</b>\n<i>next ${s.next_run || "—"}</i>`,
+      shapeProperties: { borderRadius: 10, borderDashes: [6, 4] },
+      color: { background: C.raised, border: C.warn, highlight: { background: C.raised, border: C.warn }, hover: { background: C.raised, border: C.warn } },
+    }));
   }
-  return wrap;
+  const depth = (r) => { let d = 0, cur = r; const byId = Object.fromEntries(runs.map((x) => [x.id, x]));
+    while (cur.parent_run_id && byId[cur.parent_run_id]) { d++; cur = byId[cur.parent_run_id]; } return d; };
+  const shown = new Set(tops.map((t) => t.id));
+  let grew = true;
+  while (grew) { grew = false; for (const r of runs) if (r.parent_run_id && shown.has(r.parent_run_id) && !shown.has(r.id)) { shown.add(r.id); grew = true; } }
+  for (const run of runs) {
+    if (!shown.has(run.id)) continue;
+    const dur = run.finished ? `${Math.max(1, Math.round(run.finished - run.started))}s` : "running…";
+    const border = run.status === "running" ? C.accent : run.status === "error" ? C.danger : run.status === "done" ? C.done : C.border;
+    nodes.push(box({
+      id: run.id, level: (schedules.length ? 1 : 0) + depth(run),
+      label: `${KIND_ICON[run.kind] || "•"} <b>${trim(run.label || run.kind, 46)}</b>\n<i>${run.kind} · ${dur}${run.cost ? ` · $${run.cost.toFixed(4)}` : ""}</i>`,
+      color: { background: run.status === "running" ? C.accentSoft : C.bg, border, highlight: { background: C.accentSoft, border: C.accent }, hover: { background: C.bg, border: C.accent } },
+      borderWidth: run.status === "running" ? 2.5 : 1.5,
+      title: runTooltip(run, dur),
+    }));
+    if (run.parent_run_id && shown.has(run.parent_run_id)) {
+      edges.push({ from: run.parent_run_id, to: run.id });
+    }
+  }
+
+  let host = canvas.querySelector(".pipe-net");
+  if (!host) {
+    canvas.innerHTML = `<div class="pipe-net"></div>
+      <div class="pipe-legend"><span><i class="dot run"></i>running</span><span><i class="dot ok"></i>done</span><span><i class="dot err"></i>error</span><span><i class="dot src"></i>schedule</span></div>`;
+    host = canvas.querySelector(".pipe-net");
+  }
+  const data = {
+    nodes: new vis.DataSet(nodes),
+    edges: new vis.DataSet(edges.map((e, i) => Object.assign({ id: `e${i}`, arrows: { to: { enabled: true, scaleFactor: 0.55 } },
+      color: { color: C.accent, opacity: 0.5, highlight: C.accent, hover: C.accent }, width: 1.5,
+      smooth: { enabled: true, type: "cubicBezier", forceDirection: "horizontal", roundness: 0.55 } }, e))),
+  };
+  // A DAG layout only earns its keep when runs actually branch (subagents).
+  // Flat histories look better as an organic cloud than a single tall column.
+  const mode = edges.length ? "dag" : "cloud";
+  if (pipeNet && mode !== pipeNet._mode) { pipeNet.destroy(); pipeNet = null; }
+  if (pipeNet) {
+    pipeNet.setData(data);
+  } else {
+    pipeNet = new vis.Network(host, data, mode === "dag" ? {
+      layout: { hierarchical: { enabled: true, direction: "LR", levelSeparation: 250, nodeSpacing: 84, treeSpacing: 60, sortMethod: "directed" } },
+      physics: false,
+      interaction: { hover: true, dragNodes: true, zoomView: true, dragView: true, tooltipDelay: 120 },
+    } : {
+      physics: {
+        barnesHut: { gravitationalConstant: -5200, springLength: 150, springConstant: 0.03, damping: 0.32, avoidOverlap: 0.6 },
+        stabilization: { iterations: 180, fit: true },
+      },
+      interaction: { hover: true, dragNodes: true, zoomView: true, dragView: true, tooltipDelay: 120 },
+    });
+    pipeNet._mode = mode;
+    pipeNet.on("click", (p) => { const id = p.nodes[0]; if (id && !String(id).startsWith("sched:")) drillRun(id); });
+  }
+  const n = nodes.length;
+  if (n !== pipeCount) { pipeCount = n; pipeNet.fit({ animation: { duration: 250, easingFunction: "easeInOutQuad" } }); }
 }
 
 async function drillRun(rid) {
@@ -690,48 +761,7 @@ async function loadCheckpoints() {
 }
 
 /* ---------- memory (the brain: Obsidian-compatible vault + link graph) ---------- */
-function forceLayout(nodes, edges, w, h) {
-  const pos = {};
-  nodes.forEach((n, i) => {
-    const a = (i / nodes.length) * Math.PI * 2;
-    pos[n.id] = { x: w / 2 + Math.cos(a) * w * 0.3, y: h / 2 + Math.sin(a) * h * 0.3 };
-  });
-  const idx = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  for (let it = 0; it < 220; it++) {
-    const f = {};
-    nodes.forEach((n) => (f[n.id] = { x: 0, y: 0 }));
-    for (let i = 0; i < nodes.length; i++)
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = pos[nodes[i].id], b = pos[nodes[j].id];
-        let dx = a.x - b.x, dy = a.y - b.y;
-        const d2 = Math.max(dx * dx + dy * dy, 100);
-        const rep = 5200 / d2;
-        const d = Math.sqrt(d2);
-        dx /= d; dy /= d;
-        f[nodes[i].id].x += dx * rep; f[nodes[i].id].y += dy * rep;
-        f[nodes[j].id].x -= dx * rep; f[nodes[j].id].y -= dy * rep;
-      }
-    for (const e of edges) {
-      if (!idx[e.source] || !idx[e.target]) continue;
-      const a = pos[e.source], b = pos[e.target];
-      let dx = b.x - a.x, dy = b.y - a.y;
-      const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-      const pull = (d - 95) * 0.02;
-      dx /= d; dy /= d;
-      f[e.source].x += dx * pull * d * 0.05; f[e.source].y += dy * pull * d * 0.05;
-      f[e.target].x -= dx * pull * d * 0.05; f[e.target].y -= dy * pull * d * 0.05;
-    }
-    const cool = 1 - it / 220;
-    for (const n of nodes) {
-      const p = pos[n.id];
-      p.x += (f[n.id].x + (w / 2 - p.x) * 0.01) * cool;
-      p.y += (f[n.id].y + (h / 2 - p.y) * 0.01) * cool;
-      p.x = Math.max(30, Math.min(w - 30, p.x));
-      p.y = Math.max(20, Math.min(h - 20, p.y));
-    }
-  }
-  return pos;
-}
+let memNet = null;
 
 async function loadMemory() {
   const [graph, { entries }] = await Promise.all([
@@ -739,35 +769,49 @@ async function loadMemory() {
     fetch(`/api/memory?project_id=${state.projectId}`).then((r) => r.json()),
   ]);
   const list = $("memory-list");
+  if (memNet) { memNet.destroy(); memNet = null; }
   list.innerHTML = "";
   if (!entries.length) {
     list.innerHTML = '<div class="feed-empty">Project memory — durable facts your team\'s agent has saved, linked into a graph. Plain markdown on disk (an Obsidian-compatible vault).</div>';
     return;
   }
   if (graph.nodes.length > 1 || graph.edges.length) {
-    const W = Math.max(list.clientWidth - 8, 480), H = 260;
-    const pos = forceLayout(graph.nodes, graph.edges, W, H);
-    let svg = `<svg class="memgraph" viewBox="0 0 ${W} ${H}" width="100%" height="${H}">`;
-    for (const e of graph.edges) {
-      const a = pos[e.source], b = pos[e.target];
-      if (a && b) svg += `<line x1="${a.x.toFixed(0)}" y1="${a.y.toFixed(0)}" x2="${b.x.toFixed(0)}" y2="${b.y.toFixed(0)}"/>`;
-    }
-    for (const n of graph.nodes) {
-      const p = pos[n.id];
-      svg += `<g class="memnode${n.ghost ? " ghost" : ""}" data-id="${esc(n.id)}">
-        <circle cx="${p.x.toFixed(0)}" cy="${p.y.toFixed(0)}" r="9"/>
-        <text x="${p.x.toFixed(0)}" y="${(p.y - 14).toFixed(0)}">${esc(n.title.slice(0, 22))}</text></g>`;
-    }
-    svg += "</svg>";
+    const C = themeColors();
     const wrap = document.createElement("div");
     wrap.className = "memgraph-wrap";
-    wrap.innerHTML = svg + `<div class="meta vault-hint">🗂 vault: ${esc(graph.vault)} — open it in Obsidian for the full graph</div>`;
+    wrap.innerHTML = `<div class="memgraph-net"></div>
+      <div class="meta vault-hint">🗂 vault: ${esc(graph.vault)} — open it in Obsidian for the full graph · drag nodes, click to jump</div>`;
     list.appendChild(wrap);
-    wrap.querySelectorAll(".memnode").forEach((g) => {
-      g.onclick = () => {
-        const card = list.querySelector(`[data-mem="${g.dataset.id}"]`);
-        if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 1200); }
-      };
+    const degree = {};
+    for (const e of graph.edges) { degree[e.source] = (degree[e.source] || 0) + 1; degree[e.target] = (degree[e.target] || 0) + 1; }
+    const nodes = graph.nodes.map((n) => ({
+      id: n.id, label: n.title.length > 24 ? n.title.slice(0, 23) + "…" : n.title,
+      shape: "dot", size: Math.min(9 + (degree[n.id] || 0) * 2.5, 22),
+      color: n.ghost
+        ? { background: "rgba(0,0,0,0)", border: C.muted, highlight: { background: C.raised, border: C.muted }, hover: { background: C.raised, border: C.muted } }
+        : { background: C.accent, border: C.bg, highlight: { background: C.accent, border: C.accent }, hover: { background: C.accent, border: C.accent } },
+      shapeProperties: n.ghost ? { borderDashes: [4, 4] } : {},
+      borderWidth: 2,
+      font: { color: n.ghost ? C.muted : C.text, size: 11, face: "-apple-system, 'Segoe UI', sans-serif", vadjust: 2 },
+    }));
+    const edges = graph.edges.map((e, i) => ({
+      id: `me${i}`, from: e.source, to: e.target, width: 1.5,
+      color: { color: C.accent, opacity: 0.45, highlight: C.accent, hover: C.accent },
+      smooth: { enabled: true, type: "continuous" },
+    }));
+    memNet = new vis.Network(wrap.querySelector(".memgraph-net"),
+      { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) }, {
+        physics: {
+          barnesHut: { gravitationalConstant: -2600, springLength: 115, springConstant: 0.04, damping: 0.32, avoidOverlap: 0.15 },
+          stabilization: { iterations: 220, fit: true },
+        },
+        interaction: { hover: true, dragNodes: true, zoomView: true, dragView: true },
+      });
+    memNet.on("click", (p) => {
+      const id = p.nodes[0];
+      if (!id) return;
+      const card = list.querySelector(`[data-mem="${CSS.escape(id)}"]`);
+      if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 1200); }
     });
   }
   for (const e of entries) {
@@ -1047,6 +1091,11 @@ for (const tab of document.querySelectorAll(".tab")) {
 function refreshPaneData() {
   const active = document.querySelector(".tab.active")?.dataset.tab;
   PANE_LOADERS[active]?.();
+}
+/* Deep-link a tab: /?tab=pipeline (waits for init to settle). */
+{
+  const urlTab = new URLSearchParams(location.search).get("tab");
+  if (urlTab) setTimeout(() => document.querySelector(`.tab[data-tab="${urlTab}"]`)?.click(), 700);
 }
 
 /* ---------- settings ---------- */
