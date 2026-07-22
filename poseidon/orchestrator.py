@@ -492,6 +492,21 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
             messages.append({"role": "tool", "tool_call_id": tc["id"],
                              "content": json.dumps(result)[:MAX_TOOL_RESULT]})
     else:
+        # step cap reached: force a text-only wrap-up so the turn ends with a
+        # handoff (what's done / what's left) instead of a bare error
+        try:
+            messages.append({"role": "user", "content": "[harness] You've hit this turn's step limit. In plain text (no tools): summarize what you finished, what's left, and where a teammate should pick up."})
+            data = await _chat_completion(provider, messages, tools=None)
+            msg = data["choices"][0]["message"]
+            if msg.get("content"):
+                last_content = msg["content"]
+                messages.append(msg)
+                await ctx.emit({"type": "assistant_message", "content": msg["content"], "agent": agent})
+            usd, priced = compute_cost(provider["model"], data.get("usage"))
+            ctx.store.add_usage(ctx.session_id, usd, priced, data.get("usage"))
+            ctx.store.add_run_cost(ctx.run_id, usd)
+        except Exception:
+            pass
         await ctx.emit({"type": "error", "message": f"Stopped after {max_iter} steps.", "agent": agent})
     return last_content
 
