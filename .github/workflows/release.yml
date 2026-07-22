@@ -33,18 +33,21 @@ jobs:
           name: dist
           path: dist/
 
-  # PyPI via trusted publishing (configure the publisher on pypi.org for
-  # this repo + workflow first; no token needed after that).
+  # PyPI via the PYPI_API_TOKEN repo secret. Secrets are never exposed to
+  # fork PRs (this job only runs on tag pushes, which require write access).
+  # Upgrade path: configure a Trusted Publisher on pypi.org for this repo +
+  # workflow, then drop the password line and the secret entirely.
   publish-pypi:
     needs: build-dist
     runs-on: ubuntu-latest
-    environment: pypi
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
 
   build-binaries:
     strategy:
