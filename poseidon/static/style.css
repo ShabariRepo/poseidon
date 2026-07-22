@@ -843,3 +843,16 @@ details.adv>summary{cursor:pointer;font-size:13px;font-weight:600;color:#556;pad
 details.adv>summary::-webkit-details-marker{display:none;}
 details.adv>summary::before{content:'▸ ';color:#99a;}
 details.adv[open]>summary::before{content:'▾ ';}
+
+/* ── rich markdown in assistant bubbles ── */
+.msg.assistant .md-pre{background:#1e232b;color:#e6edf3;border-radius:10px;padding:11px 13px;margin:8px 0;overflow-x:auto;font-size:12.5px;line-height:1.5;}
+.msg.assistant .md-pre code{background:none;color:inherit;padding:0;font-family:var(--mono,ui-monospace,Menlo,monospace);white-space:pre;}
+.msg.assistant code{background:rgba(120,130,150,.16);border-radius:5px;padding:1px 5px;font-size:.92em;font-family:var(--mono,ui-monospace,Menlo,monospace);}
+.msg.assistant .md-list{margin:6px 0 6px 2px;padding-left:20px;}
+.msg.assistant .md-list li{margin:3px 0;}
+.msg.assistant .md-h{margin:10px 0 4px;line-height:1.3;}
+.msg.assistant h1.md-h{font-size:1.25em;} .msg.assistant h2.md-h{font-size:1.15em;} .msg.assistant h3.md-h{font-size:1.05em;}
+.msg.assistant h4.md-h,.msg.assistant h5.md-h,.msg.assistant h6.md-h{font-size:1em;}
+.msg.assistant .md-q{border-left:3px solid rgba(120,130,150,.4);padding-left:10px;margin:6px 0;color:var(--muted,#667);}
+.msg.assistant p{margin:6px 0;}
+.msg.assistant p:first-child,.msg.assistant .md-h:first-child{margin-top:0;}

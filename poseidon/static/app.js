@@ -19,15 +19,52 @@ const esc = (s) => { const d = document.createElement("span"); d.textContent = s
 // Minimal, safe inline markdown for assistant bubbles: escape first, THEN
 // apply a tiny subset (bold/italic/code/links/breaks). No raw HTML ever
 // reaches innerHTML unescaped. (QA 2026-07-20: bubbles showed literal **.)
+function _mdInline(t) {
+  // t is already HTML-escaped. Apply inline markdown only.
+  t = t.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+  t = t.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer noopener">$2</a>');
+  return t;
+}
+// Lightweight, dependency-free, XSS-safe markdown: fenced code blocks, headings,
+// bullet/numbered lists, blockquotes, paragraphs, plus inline formatting.
 function renderMd(text) {
-  let h = esc(text ?? "");
-  // fenced/inline code first so ** inside code isn't touched
-  h = h.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
-  h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  h = h.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
-  h = h.replace(/\b(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer noopener">$1</a>');
-  h = h.replace(/\n/g, "<br>");
-  return h;
+  const src = String(text ?? "");
+  // 1) pull out fenced code blocks first (escaped, never inline-processed)
+  const blocks = [];
+  const noFence = src.replace(/```([\w-]*)\n?([\s\S]*?)```/g, (_m, lang, code) => {
+    blocks.push(`<pre class="md-pre"><code>${esc(code.replace(/\n$/, ""))}</code></pre>`);
+    return `\u0000BLOCK${blocks.length - 1}\u0000`;
+  });
+  const lines = noFence.split("\n");
+  let html = "", listType = null, para = [];
+  const flushPara = () => { if (para.length) { html += `<p>${_mdInline(esc(para.join(" ")))}</p>`; para = []; } };
+  const closeList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    const ph = line.match(/^\u0000BLOCK(\d+)\u0000$/);
+    if (ph) { flushPara(); closeList(); html += blocks[+ph[1]]; continue; }
+    if (!line.trim()) { flushPara(); closeList(); continue; }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { flushPara(); closeList(); const n = h[1].length; html += `<h${n} class="md-h">${_mdInline(esc(h[2]))}</h${n}>`; continue; }
+    const q = line.match(/^>\s?(.*)$/);
+    if (q) { flushPara(); closeList(); html += `<blockquote class="md-q">${_mdInline(esc(q[1]))}</blockquote>`; continue; }
+    const ul = line.match(/^\s*[-*+]\s+(.*)$/);
+    const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (ul || ol) {
+      flushPara();
+      const want = ul ? "ul" : "ol";
+      if (listType !== want) { closeList(); listType = want; html += `<${want} class="md-list">`; }
+      html += `<li>${_mdInline(esc((ul || ol)[1]))}</li>`;
+      continue;
+    }
+    closeList();
+    para.push(line);
+  }
+  flushPara(); closeList();
+  return html;
 }
 
 /* ---------- boot ---------- */
