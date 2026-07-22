@@ -370,6 +370,13 @@ def _checkpoint(ctx, messages, label, auto):
 
 
 _MALFORMED_MARKERS = ("Failed to call a function", "failed_generation", "tool_use_failed", "tool call validation")
+# Some models (notably llama on Groq) sometimes emit a tool call as TEXT in the
+# content instead of a real tool_calls array — e.g. "<function(write_file){...}"
+# or "<function=run_subagent>{...}". The provider returns 200, so it slips
+# through as a normal assistant message and the action never runs (the agent
+# then claims it did). Detect that leak and retry with a nudge.
+import re as _re
+_TOOLCALL_LEAK = _re.compile(r"<\s*function[\s(/=]", _re.I)
 
 
 async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> str:
@@ -460,6 +467,13 @@ async def _agent_loop(ctx, provider, messages, max_iter, agent, allow_meta) -> s
                         "total_saved": ctx.store.total_saved()})
 
         msg = data["choices"][0]["message"]
+        _leaked = bool(msg.get("content") and _TOOLCALL_LEAK.search(msg["content"]) and not msg.get("tool_calls"))
+        if _leaked and nudges < 2:
+            # don't append/emit the broken text — nudge and retry so the real
+            # tool call actually executes instead of leaking into the chat.
+            nudges += 1
+            messages.append({"role": "user", "content": "[harness] Your last reply wrote a tool call as text (a <function...> tag) instead of calling the tool. Do NOT write tool calls as text. Either make a real tool call now, or reply in plain words."})
+            continue
         messages.append(msg)
         if msg.get("content"):
             last_content = msg["content"]

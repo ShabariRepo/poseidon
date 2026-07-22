@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "poseidon-ai"
-version = "0.14.0"
+version = "0.14.1"
 description = "Open-source agent harness that opens as a chat in your browser. Watch it work, approve what matters, see what it costs."
 readme = "README.md"
 license = { text = "MIT" }
