@@ -881,3 +881,7 @@ div.vis-tooltip {
   font: 11px/1.6 -apple-system, "Segoe UI", sans-serif; box-shadow: 0 8px 24px var(--shadow);
   max-width: 320px; pointer-events: none;
 }
+
+/* brand logo (v0.15.2) */
+.brand-logo{height:30px;width:auto;vertical-align:-9px;margin-right:2px}
+.about-logo{height:44px;width:auto;vertical-align:-14px;margin-right:4px}
