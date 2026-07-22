@@ -1,7 +1,20 @@
-# 🔱 Poseidon
+<p align="center">
+  <img src="docs/assets/poseidon-logo.png" width="82" alt="Poseidon" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://getbonito.com"><img src="docs/assets/bonito-logo.png" width="82" alt="Bonito AI Labs" /></a>
+</p>
 
-**An open-source agent harness that opens as a chat in your browser.**
-Watch it work. Approve what matters. See what it costs.
+<h1 align="center">🔱 Poseidon</h1>
+
+<p align="center">
+  <b>An open-source agent harness that opens as a chat in your browser.</b><br />
+  Watch it work. Approve what matters. See what it costs.
+</p>
+
+<p align="center">
+  Made by <a href="https://getbonito.com"><b>Bonito AI Labs</b></a> — the AI gateway for teams:
+  one key for every provider, failover, cost tracking, and governance.
+</p>
 
 Most agent harnesses live in a terminal. Poseidon doesn't. One command installs it,
 one command opens a chat on `localhost` — with a live workspace pane showing every
